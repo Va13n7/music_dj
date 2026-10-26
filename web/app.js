@@ -324,6 +324,8 @@
       fadeMusicTo(0.22, 700);
       voiceA.src = intro.audioUrl;
       voiceA.onended = () => { ducked = false; fadeMusicTo(baseVol, 1000); finishTranscript(); };
+      // 口播音频加载失败：不挂死，直接恢复音乐音量继续放歌
+      voiceA.onerror = () => { ducked = false; fadeMusicTo(baseVol, 500); finishTranscript(); };
       voiceA.play().catch(() => { ducked = false; fadeMusicTo(baseVol, 500); });
       $('speakingTag').hidden = false;
       startTranscript(intro.text || '');
@@ -334,6 +336,8 @@
     if (userPaused) { holdSay = { url: u, text, onEnded }; return; }
     voiceA.src = u;
     voiceA.onended = () => { finishTranscript(); $('speakingTag').hidden = true; if (onEnded) onEnded(); };
+    // 开场白音频加载失败：不能卡死在 say 阶段——直接进队列放歌
+    voiceA.onerror = () => { finishTranscript(); $('speakingTag').hidden = true; if (onEnded) onEnded(); };
     voiceA.play().catch(() => { if (onEnded) onEnded(); });
     $('speakingTag').hidden = false;
     if (text) startTranscript(text);
@@ -409,9 +413,8 @@
   let phase = 'say';         // say | track
   let favOn = false;
 
-  function renderBroadcast(b, { restart = true } = {}) {
+  function renderBroadcast(b, { restart = false } = {}) {
     const sameId = current?.id === b.id;
-    const isBusy = !audio.paused || !voiceA.paused;
     current = b;
     if (!sameId) { qIndex = 0; phase = b.say?.audioUrl ? 'say' : 'track'; favOn = false; $('btnFav').classList.remove('on'); }
     if (!userPaused) $('state').textContent = b.state || '';
@@ -422,7 +425,10 @@
     renderTrack(b.queue?.[qIndex] || b.queue?.[0]);
     renderQueue();
     addChat('dj', b.say?.text || '', { audioUrl: b.say?.audioUrl });
-    if (!sameId || restart || !isBusy) {
+    // 自动起播仅限「新播报且还新鲜」：页面刷新拉回的几小时前旧播报只渲染界面，
+    // 不重放——旧播报的歌曲直链多半已过期，重放就是"DJ 说完没歌声"。
+    const fresh = !b.at || (Date.now() - new Date(b.at).getTime()) < 5 * 60000;
+    if (!sameId && (fresh || restart)) {
       if (b.say?.audioUrl && !b.say.skipped) {
         speakSolo(b.say.audioUrl, b.say.text || '', () => { phase = 'track'; startQueue(b); });
       } else startQueue(b);
@@ -576,6 +582,24 @@
     $('title').textContent = '这一轮放完了';
     $('speakingTag').hidden = true;
     if (roamingOn) { waitingMore = true; maybeRequestMore(); }   // 漫游开着：等新歌到了自动续播
+  });
+
+  // 直链失效自愈：加载失败自动跳下一首（连坏 3 首就停，避免死循环空转）
+  let errorStreak = 0;
+  audio.addEventListener('playing', () => { errorStreak = 0; });
+  audio.addEventListener('error', () => {
+    if (!audio.src || audio.src.startsWith('data:')) return;
+    errorStreak++;
+    addChat('system', `《${current?.queue?.[qIndex]?.title || '这首'}》直链失效了，自动跳过。`);
+    if (errorStreak >= 3 || !current?.queue?.length) {
+      $('state').textContent = 'IDLE';
+      $('title').textContent = '直链都失效了，点一句让 Valen 换一批';
+      return;
+    }
+    qIndex++;
+    if (current && qIndex < current.queue.length) playCurrentIndex();
+    else if (roamingOn) { waitingMore = true; maybeRequestMore(); }
+    else { $('state').textContent = 'IDLE'; $('title').textContent = '这一轮放完了'; }
   });
 
   // ---------- 进度条 / 时间 ----------
