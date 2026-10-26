@@ -1,6 +1,7 @@
 /**
  * Claudiao PWA · 前端逻辑（M5-T5/T6，docs/08）
- * 单 <audio> 串行播放：say 优先 → 队列 → 跳过 → MediaSession；WS 指数退避 + 断线轮询。
+ * 双 <audio> 并行声道（音乐 + DJ 人声）：say 优先 → 队列 → 跳过 → MediaSession；WS 指数退避 + 断线轮询。
+ * 用户暂停（userPaused）冻结一切自动接续：口播定时器、自动下一首、漫游续播都不得越过它。
  */
 (() => {
   const $ = (id) => document.getElementById(id);
@@ -12,6 +13,36 @@
 
   function stopVoice() { if (introTimer) { clearTimeout(introTimer); introTimer = null; } voiceA.pause(); }
   function pauseAll() { audio.pause(); voiceA.pause(); }
+  /** 用户暂停：冻结一切自动接续，只停不丢——没说完的话记下来，恢复时补上 */
+  function pausePlayback() {
+    userPaused = true;
+    if (introTimer) { clearTimeout(introTimer); introTimer = null; pendingIntro = currentIntro; currentIntro = null; ducked = false; }
+    voiceA.pause();
+    audio.pause();
+    $('state').textContent = '已暂停';
+    setPlayBtn(false);
+  }
+  /** 恢复：优先补上暂停期间欠下的动作（进下一首/补开场白/补口播），否则原地接续 */
+  function resumePlayback() {
+    if (!userPaused) { audio.play().catch(() => {}); return; }
+    userPaused = false;
+    $('state').textContent = phase === 'say' ? 'SPEAKING' : 'PLAYING';
+    setPlayBtn(true);
+    if (pendingAdvance) { pendingAdvance = false; playCurrentIndex(); return; }
+    if (holdSay) { const s = holdSay; holdSay = null; speakSolo(s.url, s.text, s.onEnded); return; }
+    if (phase === 'say') {
+      if (voiceA.src && !voiceA.ended) voiceA.play().catch(() => {});   // 开场白说到一半：接着说
+      else if (current) { phase = 'track'; startQueue(current); }       // 开场白已说完：直接进队列
+      return;
+    }
+    audio.play().catch(() => {});
+    if (pendingIntro) { const it = pendingIntro; pendingIntro = null; speakOverMusic(it); return; }
+    if (voiceA.src && voiceA.paused && !voiceA.ended && voiceA.currentTime > 0) voiceA.play().catch(() => {});
+  }
+  /** 显式切歌：丢弃一切欠下的动作，直接往前走 */
+  function clearHold() {
+    userPaused = false; holdSay = null; pendingIntro = null; pendingAdvance = false; currentIntro = null; ducked = false;
+  }
   function fadeMusicTo(target, ms = 800) {
     clearInterval(fadeTimer);
     const from = audio.volume;
@@ -23,11 +54,16 @@
       if (i >= steps) { clearInterval(fadeTimer); audio.volume = target; }
     }, ms / steps);
   }
-  /** 口播压音乐：音乐淡入压低 → DJ 说话 → 结束后音乐音量恢复 */
+  /** 口播压音乐：音乐淡入压低 → DJ 说话 → 结束后音乐音量恢复。暂停期间不说话，转 pendingIntro */
   function speakOverMusic(intro) {
     if (!intro?.audioUrl) return;
+    if (userPaused) { pendingIntro = intro; return; }
     ducked = true;
+    currentIntro = intro;
     introTimer = setTimeout(() => {
+      introTimer = null;
+      currentIntro = null;
+      if (userPaused) { pendingIntro = intro; ducked = false; return; }   // 暂停恰好落在 700ms 窗口内
       fadeMusicTo(0.22, 700);
       voiceA.src = intro.audioUrl;
       voiceA.onended = () => { ducked = false; fadeMusicTo(baseVol, 1000); stopSubtitles(); };
@@ -35,8 +71,9 @@
       startSubtitles(intro.text || '');
     }, 700);                          // 音乐先起 ~0.7s 再开口，像真电台
   }
-  /** DJ 说话（不经音乐的开场白/占位） */
+  /** DJ 说话（不经音乐的开场白/占位）。暂停期间先记下，恢复时补说 */
   function speakSolo(u, text, onEnded) {
+    if (userPaused) { holdSay = { url: u, text, onEnded }; return; }
     voiceA.src = u;
     voiceA.onended = () => { stopSubtitles(); if (onEnded) onEnded(); };
     voiceA.play().catch(() => { if (onEnded) onEnded(); });
@@ -163,8 +200,8 @@
             } else {
               current.queue.push(m.data.track);
             }
-            // 漫游中队列曾耗尽 → 新歌到了自动续播
-            if (roamingOn && waitingMore && current.queue[qIndex]?.audioUrl) {
+            // 漫游中队列曾耗尽 → 新歌到了自动续播（用户暂停中不抢播放）
+            if (roamingOn && waitingMore && !userPaused && current.queue[qIndex]?.audioUrl) {
               waitingMore = false;
               phase = 'track';
               playCurrentIndex();
@@ -197,19 +234,23 @@
     } catch { /* ignore */ }
   }
 
-  // ---------- 播放器：单 <audio>，say → 队列 ----------
+  // ---------- 播放器：双 <audio>，say → 队列；userPaused 冻结一切自动接续 ----------
   let current = null;        // 最近 Broadcast
   let qIndex = 0;            // 当前队列下标
   let phase = 'say';         // say | track
-  const pending = { sayUrl: null };
+  let userPaused = false;    // 用户主动暂停：口播定时器/自动下一首/漫游续播全部冻结
+  let holdSay = null;        // 暂停期间欠下的开场白 { url, text, onEnded }
+  let pendingIntro = null;   // 暂停期间欠下的曲目口播
+  let pendingAdvance = false;// 暂停边界曲目刚好播完 → 恢复时进下一首
+  let currentIntro = null;   // 正在等 700ms 窗口的口播（暂停时收回用）
 
   function renderBroadcast(b, { restart = true } = {}) {
     // 同一 Broadcast 的重复推送（POST 响应 + WS）不重启播放，只刷新界面
     const sameId = current?.id === b.id;
     const isBusy = !audio.paused || !voiceA.paused;
     current = b;
-    if (!sameId || restart) { qIndex = 0; phase = b.say?.audioUrl ? 'say' : 'track'; }
-    $('state').textContent = b.state || '';
+    if (!sameId) { qIndex = 0; phase = b.say?.audioUrl ? 'say' : 'track'; }   // 只有新播报才重置进度
+    $('state').textContent = userPaused ? '已暂停' : (b.state || '');
     $('say').textContent = b.say?.text ? `“${b.say.text}”` : '';
     $('why').textContent = b.reason || '';
     renderTrack(b.queue?.[qIndex] || b.queue?.[0]);
@@ -309,20 +350,20 @@
   }
 
   function startQueue(b) {
-    if (!b.queue?.length) { if (b.fallbackAudio?.audioUrl) { myLastPlayTs = Date.now(); chan?.postMessage({ type: 'takeover', ts: myLastPlayTs }); audio.src = b.fallbackAudio.audioUrl; audio.play().catch(() => {}); } $('lyricsCard').hidden = true; return; }
+    phase = 'track';
+    if (!b.queue?.length) { if (b.fallbackAudio?.audioUrl) { myLastPlayTs = Date.now(); chan?.postMessage({ type: 'takeover', ts: myLastPlayTs }); audio.src = b.fallbackAudio.audioUrl; if (!userPaused) audio.play().catch(() => {}); } $('lyricsCard').hidden = true; return; }
     playCurrentIndex();
   }
   function playCurrentIndex() {
     const t = current?.queue?.[qIndex];
     if (!t) { pauseAll(); $('state').textContent = 'IDLE'; return; }
     renderTrack(t);
-    // 音乐起播；有口播则压音乐淡入 DJ，说完恢复
     myLastPlayTs = Date.now();
     chan?.postMessage({ type: 'takeover', ts: myLastPlayTs, tabId: TAB_ID });
     audio.src = t.audioUrl;
     audio.volume = baseVol;
-    audio.play().catch(() => {});
-    if (t.intro?.audioUrl && !t.intro.skipped) speakOverMusic(t.intro);
+    if (t.intro?.audioUrl && !t.intro.skipped) speakOverMusic(t.intro);   // 暂停中会被收进 pendingIntro
+    if (!userPaused) audio.play().catch(() => {});                        // 暂停中只装弹不起播，恢复时接续
     loadLyrics(t);
     maybeRequestMore();          // 最后一首开播时就续下一批（无缝衔接）
   }
@@ -335,21 +376,20 @@
       if (e.data?.type !== 'takeover') return;
       if (e.data.ts < myLastPlayTs - 50) return;         // 我的播放更新，忽略旧消息
       if (!audio.paused || !voiceA.paused) {
-        pauseAll();
+        pausePlayback();
         $('state').textContent = '其他标签页在播';
       }
     });
   }
 
   audio.addEventListener('ended', () => {
-    if (phase === 'track') {
-      qIndex++;
-      if (current && qIndex < current.queue.length) return playCurrentIndex();
-      $('state').textContent = 'IDLE';
-      $('title').textContent = '这一轮放完了';
-      if (roamingOn) { waitingMore = true; maybeRequestMore(); }   // 漫游开着：等新歌到了自动续播
-      return;
-    }
+    if (phase !== 'track') return;
+    qIndex++;
+    if (userPaused) { pendingAdvance = true; return; }   // 暂停落在切歌边界：恢复时再进下一首
+    if (current && qIndex < current.queue.length) return playCurrentIndex();
+    $('state').textContent = 'IDLE';
+    $('title').textContent = '这一轮放完了';
+    if (roamingOn) { waitingMore = true; maybeRequestMore(); }   // 漫游开着：等新歌到了自动续播
   });
 
   // ---------- 控制 ----------
@@ -362,10 +402,10 @@
     if (a === lastControl.action && now - lastControl.at < 800) return;   // POST+WS 双通道去重
     lastControl = { action: a, at: now };
     switch (a) {
-      case 'pause': pauseAll(); $('state').textContent = 'IDLE'; setPlayBtn(false); break;
-      case 'resume': audio.play().catch(() => {}); setPlayBtn(true); break;
-      case 'next': stopVoice(); audio.pause(); doNext(); break;
-      case 'prev': stopVoice(); audio.pause(); if (qIndex > 0) { qIndex--; playCurrentIndex(); } break;
+      case 'pause': pausePlayback(); break;
+      case 'resume': resumePlayback(); break;
+      case 'next': stopVoice(); clearHold(); audio.pause(); doNext(); break;
+      case 'prev': stopVoice(); audio.pause(); if (qIndex > 0) { clearHold(); qIndex--; playCurrentIndex(); } else resumePlayback(); break;
       case 'volume_up': setMusicVolume(baseVol + 0.1); break;
       case 'volume_down': setMusicVolume(baseVol - 0.1); break;
       case 'mute': audio.muted = true; break;
@@ -375,6 +415,7 @@
     }
   }
   function doNext() {
+    clearHold();
     fetch(`/api/next?advance=1&playedMs=${Math.round(audio.currentTime * 1000)}`)
       .then((r) => (r.ok ? r.json() : null))
       .then((j) => {
@@ -382,13 +423,13 @@
       }).catch(() => {});
   }
   $('btnSkip').addEventListener('click', doNext);
-  $('btnPrev').addEventListener('click', () => { if (qIndex > 0) { qIndex--; playCurrentIndex(); } });
+  $('btnPrev').addEventListener('click', () => { if (qIndex > 0) { clearHold(); qIndex--; playCurrentIndex(); } else resumePlayback(); });
 
   // 暂停/播放按钮
   function setPlayBtn(playing) { $('btnPlayPause').textContent = playing ? '⏸' : '▶'; }
   $('btnPlayPause').addEventListener('click', () => {
-    if (audio.paused) { audio.play().catch(() => {}); setPlayBtn(true); }
-    else { pauseAll(); setPlayBtn(false); }
+    if (userPaused) resumePlayback();
+    else pausePlayback();
   });
   audio.addEventListener('play', () => setPlayBtn(true));
   audio.addEventListener('pause', () => setPlayBtn(false));
@@ -400,8 +441,8 @@
   // MediaSession 锁屏控制
   if ('mediaSession' in navigator) {
     try {
-      navigator.mediaSession.setActionHandler('pause', () => { audio.pause(); });
-      navigator.mediaSession.setActionHandler('play', () => { audio.play().catch(() => {}); });
+      navigator.mediaSession.setActionHandler('pause', () => pausePlayback());
+      navigator.mediaSession.setActionHandler('play', () => resumePlayback());
     } catch { /* ignore */ }
   }
 
@@ -445,8 +486,8 @@
           if (!current.queue.some((x) => x.audioUrl === t.audioUrl)) { t.index = current.queue.length; current.queue.push(t); }
         }
         addChat('system', `漫游续上了 ${j.tracks.length} 首`);
-        // 队列曾耗尽在等 → 续播
-        if (audio.paused && phase === 'track' && current.queue[qIndex]?.audioUrl) playCurrentIndex();
+        // 队列曾耗尽在等 → 续播（用户暂停中不抢播放）
+        if (waitingMore && !userPaused && phase === 'track' && current.queue[qIndex]?.audioUrl) { waitingMore = false; playCurrentIndex(); }
       }
     }).catch(() => {}).finally(() => { morePending = false; });
   }
