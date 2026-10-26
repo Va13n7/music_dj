@@ -85,27 +85,37 @@ export function findBuiltinProviderConfig(home = os.homedir()) {
  * 从 ZCode 共享凭据（~/.zcode/v2/credentials.json）解出编码计划 API key。
  * 加密格式 enc:v1:<iv>.<tag>.<ct>（base64url，AES-256-GCM），
  * 密钥 = sha256(ZCODE_CREDENTIAL_SECRET || "zcode-credential-fallback:<platform>:<home>:<user>")。
+ * 两种凭据形态：
+ *   老：account-provider:coding-plan:account:<plan>:account:<uid>:api-key（直存 key）
+ *   新（桌面端 OAuth 化）：oauth:<provider>:access_token（访问令牌，当 key 用）
  */
 export function resolveCodingPlanApiKey(providerId, home = os.homedir(), env = process.env) {
   if (env.CLAUDIAO_ZCODE_API_KEY) return env.CLAUDIAO_ZCODE_API_KEY;
   const f = path.join(home, '.zcode', 'v2', 'credentials.json');
   let raw;
   try { raw = JSON.parse(fs.readFileSync(f, 'utf8')); } catch { return null; }
-  // 键名格式：account-provider:coding-plan:account:<plan>:account:<用户id>:api-key
-  const plan = providerId.replace(/^account:/, '');
-  const prefix = `account-provider:coding-plan:account:${plan}:account:`;
-  const entry = Object.keys(raw).find((k) => k.startsWith(prefix) && k.endsWith(':api-key'));
-  const payload = entry ? raw[entry] : undefined;
-  if (typeof payload !== 'string' || !payload.startsWith('enc:v1:')) return null;
   const secret = env.ZCODE_CREDENTIAL_SECRET?.trim()
     || `zcode-credential-fallback:${process.platform}:${os.homedir()}:${os.userInfo().username}`;
   const aesKey = crypto.createHash('sha256').update(secret).digest();
-  try {
-    const [ivB64, tagB64, ctB64] = payload.slice(7).split('.');
-    const d = crypto.createDecipheriv('aes-256-gcm', aesKey, Buffer.from(ivB64, 'base64url'));
-    d.setAuthTag(Buffer.from(tagB64, 'base64url'));
-    return Buffer.concat([d.update(Buffer.from(ctB64, 'base64url')), d.final()]).toString('utf8');
-  } catch { return null; }
+  const dec = (payload) => {
+    if (typeof payload !== 'string' || !payload.startsWith('enc:v1:')) return null;
+    try {
+      const [ivB64, tagB64, ctB64] = payload.slice(7).split('.');
+      const d = crypto.createDecipheriv('aes-256-gcm', aesKey, Buffer.from(ivB64, 'base64url'));
+      d.setAuthTag(Buffer.from(tagB64, 'base64url'));
+      return Buffer.concat([d.update(Buffer.from(ctB64, 'base64url')), d.final()]).toString('utf8');
+    } catch { return null; }
+  };
+  // 老格式：编码计划直存的 api-key
+  const plan = providerId.replace(/^account:/, '');
+  const prefix = `account-provider:coding-plan:account:${plan}:account:`;
+  const entry = Object.keys(raw).find((k) => k.startsWith(prefix) && k.endsWith(':api-key'));
+  const fromKey = dec(entry ? raw[entry] : undefined);
+  if (fromKey) return fromKey;
+  // 新格式：OAuth 访问令牌（provider 名取 plan 前缀，兜底任一 access_token）
+  const oauthEntry = Object.keys(raw).find((k) => k === `oauth:${plan.split('-')[0]}:access_token`)
+    || Object.keys(raw).find((k) => k.startsWith('oauth:') && k.endsWith(':access_token'));
+  return oauthEntry ? dec(raw[oauthEntry]) : null;
 }
 
 // ---------- 会话状态落盘 ----------
@@ -204,7 +214,20 @@ export class ZcodeAgentAdapter {
     const personal = path.join(os.homedir(), '.zcode', 'v2', 'provider_config.json');
     if (fs.existsSync(personal)) env.ZCODE_PERSONAL_PROVIDER_CONFIG_FILE = personal;
 
-    this.child = spawn(process.execPath, ['--experimental-sqlite', this.cliPath, 'app-server', '--stdio'], {
+    // 运行时选择：桌面端 Electron 自带的 node（24.x，node:sqlite 与新 CLI 的迁移匹配）
+    // 优先；本机 node（22.x 的实验 sqlite 跑不动新版 CLI 的 0024 迁移）兜底。
+    const installRoot = path.dirname(path.dirname(path.dirname(this.cliPath)));   // .../ZCode/resources/glm → .../ZCode
+    const electronNode = process.platform === 'win32' ? path.join(installRoot, 'ZCode.exe') : null;
+    let cmd, spawnArgs;
+    if (electronNode && fs.existsSync(electronNode)) {
+      cmd = electronNode;
+      spawnArgs = [this.cliPath, 'app-server', '--stdio'];
+      env.ELECTRON_RUN_AS_NODE = '1';
+    } else {
+      cmd = process.execPath;
+      spawnArgs = ['--experimental-sqlite', this.cliPath, 'app-server', '--stdio'];
+    }
+    this.child = spawn(cmd, spawnArgs, {
       cwd: this.workspacePath,
       stdio: ['pipe', 'pipe', 'pipe'],
       windowsHide: true,
@@ -279,7 +302,8 @@ export class ZcodeAgentAdapter {
     // 通知/事件：turn-failed 用于快速失败
     if (msg.method === 'computer-use/operation-event' && msg.params?.kind === 'turn-failed'
         && msg.params.sessionId === this.sessionId) {
-      this._lastTurnFailure = { turnId: msg.params.turnId, at: Date.now() };
+      this._lastTurnFailure = { turnId: msg.params.turnId, at: Date.now(), detail: msg.params };
+      this.log('warn', 'agent turn-failed 事件', { detail: JSON.stringify(msg.params).slice(0, 400) });
     }
   }
 
@@ -385,9 +409,12 @@ export class ZcodeAgentAdapter {
       }
     }
     if (!this.sessionId) {
+      // 新版 CLI（3.16.3+）：create 带 model 会走注册表校验，而账号 provider 的模型
+      // 列表在无头模式下不物化（"Provider Registry 中不存在 Model"）。不传 model
+      // 让服务端用默认选择（桌面端当前模型），逐轮的 modelSelection 在 session/send
+      // 里仍然生效。
       const r = await this._request('session/create', {
         workspace: { workspacePath: this.workspacePath, workspaceKey: this.workspacePath },
-        model: this._modelSelection(),
         mode: 'yolo',
         titleGenerationEnabled: false,
         toolDenylist: ALL_TOOLS,
@@ -441,7 +468,6 @@ export class ZcodeAgentAdapter {
       sessionId,
       inputId: `claodiao-${started}`,
       content: String(promptText ?? ''),
-      modelSelection: this._modelSelection(),
       toolDenylist: ALL_TOOLS,
     }, 15000);
 
