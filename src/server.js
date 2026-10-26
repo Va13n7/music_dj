@@ -190,22 +190,33 @@ export function createServer(deps = {}) {
     }
   });
 
-  // ---------- GET /api/lyric：歌词（官方优先，gdstudio 兜底） ----------
-  app.get('/api/lyric', requireAuth, async (req, res) => {
+  // ---------- 网易云扫码登录（cookie 音源） ----------
+  app.get('/api/netease/login/qr', requireAuth, async (req, res) => {
     try {
-      const { encryptedId, lyricId, id } = req.query;
-      if (!encryptedId && !lyricId && !id) {
-        return res.status(400).json({ error: 'E_BAD_REQUEST', message: '需要 encryptedId 或 lyricId/id' });
-      }
-      const r = await deps.music.lyric({
-        encryptedId: encryptedId || null,
-        lyricId: lyricId || id || null,
-        id: id || lyricId || null,
-      });
+      res.json(await deps.music.cookieSrc.loginQrCreate());
+    } catch (e) {
+      res.status(503).json({ error: 'E_NCM', message: e.message });
+    }
+  });
+  app.get('/api/netease/login/check', requireAuth, async (req, res) => {
+    try {
+      const r = await deps.music.cookieSrc.loginQrCheck();
+      if (r.code === 803) deps.hub?.broadcast('state-change', { state: 'netease_logged_in' });
       res.json(r);
     } catch (e) {
-      res.status(500).json({ error: 'E_LYRIC', message: e.message });
+      res.status(400).json({ error: 'E_QR', message: e.message });
     }
+  });
+  app.get('/api/netease/status', requireAuth, (req, res) => {
+    res.json({
+      loggedIn: deps.music.cookieSrc.loggedIn,
+      needsLogin: deps.music.cookieSrc.needsLogin,
+      installed: deps.music.cookieSrc.installed,
+    });
+  });
+  app.post('/api/netease/logout', requireAuth, (req, res) => {
+    deps.music.cookieSrc.logout();
+    res.json({ ok: true });
   });
 
   // ---------- 无限漫游模式 ----------

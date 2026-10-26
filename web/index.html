@@ -113,6 +113,19 @@ td, th { text-align: left; padding: 6px 8px; border-bottom: 1px solid #232330; }
       <div id="profileMeta" class="reason" style="margin-bottom:6px">尚未生成——导入歌单后点「生成品味画像」</div>
       <textarea id="profileBox" spellcheck="false" style="min-height:220px;display:none"></textarea>
     </div>
+    <div class="card">
+      <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:8px">
+        <b style="font-size:14px">网易云账号（Cookie 音源）</b>
+        <span id="neteaseState" class="badge">检查中…</span>
+      </div>
+      <div class="reason" style="margin-bottom:8px">扫码登录你的网易云账号后，VIP 歌曲与完整曲库跟随你的账号权益；听歌记录与歌单自动同步。</div>
+      <img id="neteaseQr" alt="网易云音乐登录二维码" style="width:180px;height:180px;border-radius:8px;background:#fff" hidden>
+      <div class="row">
+        <button class="primary" id="btnNeteaseLogin" hidden>刷新二维码</button>
+        <button class="ghost" id="btnNeteaseLogout" hidden>退出登录</button>
+        <span class="reason" id="neteaseMsg"></span>
+      </div>
+    </div>
   </section>
   <section class="view" id="view-settings">
     <div class="card">

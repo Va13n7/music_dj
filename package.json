@@ -11,13 +11,11 @@
   "scripts": {
     "start": "node src/main.js",
     "dev": "node --watch src/main.js",
-
     "test": "node --test \"tests/**/*.test.js\"",
     "test:unit": "node --test \"tests/unit/**/*.test.js\"",
     "test:contract": "node --test \"tests/contract/**/*.test.js\"",
     "test:e2e": "node --test \"tests/e2e/**/*.test.js\"",
     "test:watch": "node --test --watch \"tests/**/*.test.js\"",
-
     "brain:smoke": "node tools/brain-smoke.js",
     "brain:ask": "node tools/brain-ask.js",
     "fixtures:brain": "node tools/record-brain-fixtures.js",
@@ -26,18 +24,14 @@
     "db:migrate": "node tools/db-migrate.js",
     "taste:import": "node tools/taste-import.js",
     "taste:analyze": "node tools/taste-analyze.js",
-
     "tts:warm": "node tools/tts-warm.js",
     "tts:list-voices": "node tools/tts-voices.js",
-
     "music:check": "node tools/music-check.js",
     "music:resolve": "node tools/music-resolve.js",
-
     "validate:playlists": "node tools/validate-playlists.js",
     "validate:config": "node tools/validate-config.js",
     "validate:docs": "node tools/validate-docs.js",
     "validate:all": "node tools/validate-playlists.js && node tools/validate-config.js && node tools/validate-docs.js",
-
     "doctor": "node tools/doctor.js",
     "doctor:deep": "node tools/doctor.js --deep",
     "backup": "node tools/backup.js"
@@ -47,9 +41,9 @@
     "dotenv": "^16.4.5",
     "express": "^4.21.1",
     "js-yaml": "^4.1.0",
+    "NeteaseCloudMusicApi": "^4.32.0",
     "ws": "^8.18.0"
   },
-  "devDependencies": {},
   "brain": {
     "notes": "大脑由 ZCode Agent 提供（zcode.cjs app-server 协议，复用 ZCode 桌面端 bigmodel 编码计划账号态），不通过 npm 依赖引入。适配器: src/adapters/brain/zcode-agent.js"
   }

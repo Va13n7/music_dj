@@ -1,22 +1,18 @@
 /**
  * Claudiao · 音乐提供方 · 组合门面
  *
- * docs/06-music-provider.md §2 MusicProvider 契约的组合实现（2026-10 定稿的分工）：
+ * 音源优先级（2026-10 定稿）：
+ *   1. netease-cookie   扫码登录的网易云账号（标准音质全目录可用，VIP 权益跟随账号）
+ *   2. gdstudio         公共实例（320k 直链，无需登录，主力音质源）
+ *   3. netease-openapi  开放平台（账户解封后备用）
+ *   4. fallback-audio   本地兜底
  *
- *   网易云开放平台（个人版）  → 搜索 / 元数据 / 可播性(playFlag) / 封面 / 歌词 / 推荐
- *   gdstudio 公共实例        → 播放直链（唯一可用直链源，netease 源）
- *
- * 原则（docs/06 §1.1 合规边界）：只流式播放、不落地、直链每次重新解析；
- * 开放平台拿不到直链（个人应用白名单无 playurl），直链层完全由 gdstudio 承担。
- *
- * 降级链：
- *   search  : netease-openapi（用户令牌） → gdstudio(netease) → gdstudio(joox)
- *   resolve : gdstudio(netease) → gdstudio(joox，已知不出直链，保留容错)
- *   lyric   : netease-openapi → gdstudio
- *   playlist: gdstudio（netease 源）
+ * resolve 链路：cookie 搜索（元数据/playFlag/封面最全）→ 打分 → gdstudio 取 320k
+ * → 全失败 → cookie songUrl standard 兜底 → gdstudio 自搜索兜底 → 抛错。
  */
 import { GdstudioProvider } from './gdstudio.js';
 import { NeteaseOpenApiProvider } from './netease-openapi.js';
+import { NeteaseCookieProvider } from './netease-cookie.js';
 
 // 与 tools/music-resolve.js / docs/06 一致的噪声黑名单
 export const NOISE = /翻唱|cover|伴奏|instrumental|remix|dj版|live|现场|纯音乐|钢琴版|八音盒|深情版|女声版|男声版|抖音|铃声|片段|加速|慢速|高音质|无损/i;
@@ -38,24 +34,27 @@ export function scoreCandidate(cand, wantArtist, wantTitle) {
 }
 
 export class MusicProviderFacade {
-  /** @param {object} opts { env, log } */
+  /** @param {object} opts { env, log, root } */
   constructor(opts = {}) {
     this.env = opts.env || {};
+    this.root = opts.root || process.cwd();
     this.log = opts.log || (() => {});
     this.name = 'combined';
+    this.cookieSrc = new NeteaseCookieProvider({ root: this.root, log: this.log });
     this.official = new NeteaseOpenApiProvider({ env: this.env, log: this.log });
     this.gdstudio = new GdstudioProvider({ env: this.env, log: this.log });
     this.sources = ['netease', 'joox'];
   }
 
   async available() {
-    const [official, gdstudio] = await Promise.all([
+    const [cookie, official, gdstudio] = await Promise.all([
+      Promise.resolve({ ok: this.cookieSrc.loggedIn, loggedIn: this.cookieSrc.loggedIn, needsLogin: this.cookieSrc.needsLogin }),
       this.official.availableProbe().catch((e) => ({ ok: false, error: e.message })),
       this.gdstudio.available().catch((e) => ({ ok: false, error: e.message })),
     ]);
     return {
-      ok: gdstudio.ok,                       // 直链源是硬依赖
-      official, gdstudio,
+      ok: gdstudio.ok,
+      cookie, official, gdstudio,
       latencyMs: Math.max(official.latencyMs || 0, gdstudio.latencyMs || 0),
       sources: this.sources,
     };
@@ -70,22 +69,19 @@ export class MusicProviderFacade {
   }
 
   /**
-   * 搜索：官方优先（playFlag/封面/标签），失败降级 gdstudio。
-   * 返回统一 Track 形态（docs/06 §2），带 provider 标记。
+   * 搜索：登录 cookie 源优先（元数据/权益跟随账号），失败降级 gdstudio。
    */
   async search(query, { limit = 10, source } = {}) {
     const errors = [];
-    // 1) 官方
-    if (this.official.available()) {
+    if (this.cookieSrc.loggedIn) {
       try {
-        const tracks = await this.official.search(query, { limit });
+        const tracks = await this.cookieSrc.search(query, { limit });
         if (tracks.length) return tracks;
       } catch (e) {
-        errors.push(`official: ${e.message}`);
-        this.log('warn', 'netease-openapi search 降级', { error: e.message });
+        errors.push(`cookie: ${e.message}`);
+        this.log.warn('netease-cookie search 降级', { error: e.message });
       }
     }
-    // 2) gdstudio
     try {
       const tracks = await this.gdstudio.search(query, { limit, source });
       if (tracks.length) return tracks;
@@ -100,22 +96,25 @@ export class MusicProviderFacade {
 
   /**
    * 端到端解析：「艺人 - 曲名」→ 直链。
-   * 搜索官方优先（拿到可播性），直链一律 gdstudio。
+   * 链路：cookie 搜索（元数据/权益）→ 打分 → gdstudio 320k → cookie standard 兜底
+   * → gdstudio 自搜索兜底 → 抛错。
    * @returns {Promise<{url,br,size,from,resolvedAt,expiresAt,track,score}>}
    */
   async resolve(ref, { br, showCandidates = false } = {}) {
     const { artist, title, query } = this._parseRef(ref);
     const errors = [];
 
-    // 1) 官方搜索拿候选（含 playFlag）
+    // 1) cookie 搜索拿候选（playFlag/封面元数据最全）
     let candidates = [];
-    try {
-      candidates = await this.official.search(query, { limit: 10 });
-    } catch (e) {
-      errors.push(`official search: ${e.message}`);
+    if (this.cookieSrc.loggedIn) {
+      try {
+        candidates = await this.cookieSrc.search(query, { limit: 10 });
+      } catch (e) {
+        errors.push(`cookie search: ${e.message}`);
+      }
     }
 
-    // 2) 官方候选按打分排序，逐个到 gdstudio 拿直链
+    // 2) 打分排序
     const scored = candidates
       .map((c) => ({ c, ...scoreCandidate(c, artist, title) }))
       .sort((a, b) => b.s - a.s);
@@ -126,6 +125,7 @@ export class MusicProviderFacade {
       });
     }
 
+    // 3) 逐候选：gdstudio 320k 优先（音质），cookie standard 兜底（账号权益）
     for (const { c, s } of scored) {
       try {
         const audio = await this.gdstudio.resolve(
@@ -134,11 +134,26 @@ export class MusicProviderFacade {
         );
         return { ...audio, track: c, score: s };
       } catch (e) {
-        errors.push(`gdstudio resolve「${c.name}」: ${e.message}`);
+        errors.push(`gdstudio「${c.name}」: ${e.message}`);
+      }
+      if (this.cookieSrc.loggedIn) {
+        try {
+          const u = await this.cookieSrc.songUrl(c.encryptedId || c.id, { level: 'standard' });
+          if (u.url) {
+            return {
+              url: u.url, br: 128, size: u.size ?? null,
+              from: 'netease-cookie', resolvedAt: Date.now(),
+              expiresAt: Date.now() + 20 * 60000,
+              track: c, score: s,
+            };
+          }
+        } catch (e) {
+          errors.push(`cookie songUrl「${c.name}」: ${e.message}`);
+        }
       }
     }
 
-    // 3) 官方不可用/全军覆没 → 走 gdstudio 自己的搜索+直链（旧行为，含打分）
+    // 4) cookie 候选全无直链 → gdstudio 自己的搜索+直链（旧行为，含打分）
     try {
       const tracks = await this.gdstudio.search(query, { limit: 10 });
       const gScored = tracks
@@ -162,14 +177,16 @@ export class MusicProviderFacade {
     throw err;
   }
 
-  /** 歌词：官方优先 */
+  /**
+   * 歌词：登录 cookie 源优先（lyric_new 带翻译），失败降级 gdstudio。
+   */
   async lyric(track) {
-    if (track?.encryptedId) {
+    if (this.cookieSrc.loggedIn && (track?.encryptedId || track?.lyricId || track?.id)) {
       try {
-        const r = await this.official.lyric(track.encryptedId);
+        const r = await this.cookieSrc.lyric(track.encryptedId || track.lyricId || track.id);
         if (r.lrc) return r;
       } catch (e) {
-        this.log('warn', '官方歌词降级', { error: e.message });
+        this.log.warn('官方歌词降级', { error: e.message });
       }
     }
     return this.gdstudio.lyric(track?.lyricId || track?.id);
@@ -187,14 +204,15 @@ export class MusicProviderFacade {
     return this.gdstudio.playlist(id);
   }
 
-  /** 推荐（官方独占能力；电台主动播报的选曲源） */
-  async recommend({ kind = 'daily' } = {}) {
-    try {
-      if (kind === 'fm') return await this.official.personalFm();
-      return await this.official.dailyRecommend();
-    } catch (e) {
-      this.log('warn', '官方推荐不可用', { error: e.message, kind });
-      return null;                                                  // docs/06 §2：未实现/不可用返回 null
+  /** 每日推荐（登录 cookie 源；官方个性化，漫游歌源用） */
+  async dailyRecommend(limit = 30) {
+    if (this.cookieSrc.loggedIn) {
+      try {
+        return await this.cookieSrc.dailyRecommend(limit);
+      } catch (e) {
+        this.log.warn('每日推荐不可用', { error: e.message });
+      }
     }
+    return null;
   }
 }

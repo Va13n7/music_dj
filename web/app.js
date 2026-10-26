@@ -86,7 +86,7 @@
     b.classList.add('active');
     document.querySelectorAll('.view').forEach((v) => v.classList.remove('active'));
     $(b.dataset.view).classList.add('active');
-    if (b.dataset.view === 'view-profile') { loadTaste(); loadProfile(); }
+    if (b.dataset.view === 'view-profile') { loadTaste(); loadProfile(); refreshNetease(); }
     if (b.dataset.view === 'view-settings') refreshHealth();
   }));
 
@@ -515,6 +515,54 @@
       if (r.ok) tasteBase = j.sha1;
     } catch { $('tasteMsg').textContent = '网络错误'; }
     $('btnSaveTaste').disabled = false;
+  });
+
+  // ---------- 网易云扫码登录（Cookie 音源） ----------
+  let neteasePollTimer = null;
+  async function refreshNetease() {
+    try {
+      const st = await (await fetch('/api/netease/status')).json();
+      const badge = $('neteaseState');
+      if (st.loggedIn) {
+        badge.textContent = '已登录';
+        badge.style.color = '#4cd97b';
+        $('neteaseQr').hidden = true; $('btnNeteaseLogin').hidden = true; $('btnNeteaseLogout').hidden = false;
+        $('neteaseMsg').textContent = '直链跟随你的账号权益（VIP 曲目可听）';
+      } else {
+        badge.textContent = '未登录';
+        badge.style.color = '';
+        $('btnNeteaseLogout').hidden = true;
+        $('neteaseMsg').textContent = st.installed === false ? '服务端缺 NeteaseCloudMusicApi 依赖' : '扫码登录后可解锁完整曲库与音质';
+      }
+    } catch { /* ignore */ }
+  }
+  $('btnNeteaseLogin').addEventListener('click', async () => {
+    $('btnNeteaseLogin').disabled = true;
+    $('neteaseMsg').textContent = '二维码生成中…';
+    try {
+      const qr = await (await fetch('/api/netease/login/qr')).json();
+      $('neteaseQr').src = qr.qrimg; $('neteaseQr').hidden = false;
+      $('neteaseMsg').textContent = '请用网易云音乐 App 扫码';
+      const unikey = qr.unikey;
+      clearInterval(neteasePollTimer);
+      neteasePollTimer = setInterval(async () => {
+        try {
+          const st = await (await fetch('/api/netease/login/check')).json();
+          if (st.code === 803) {
+            clearInterval(neteasePollTimer);
+            $('neteaseMsg').textContent = '登录成功 ✓ 音源已切换为你的账号权益';
+            refreshNetease();
+          } else if (st.code === 802) {
+            $('neteaseMsg').textContent = '已扫码，请在手机上确认';
+          }
+        } catch { /* ignore */ }
+      }, 2000);
+    } catch { $('neteaseMsg').textContent = '二维码生成失败'; }
+    $('btnNeteaseLogin').disabled = false;
+  });
+  $('btnNeteaseLogout').addEventListener('click', async () => {
+    await fetch('/api/netease/logout', { method: 'POST' }).catch(() => {});
+    refreshNetease();
   });
 
   // ---------- 歌单导入 → 品味画像 ----------
