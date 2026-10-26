@@ -1,0 +1,4 @@
+* text=auto
+*.mp3 -text
+*.png -text
+*.jpg -text

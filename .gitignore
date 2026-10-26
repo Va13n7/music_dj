@@ -1,0 +1,43 @@
+# ---------- 机密与本地配置 ----------
+config/.env
+config/local.yml
+*.pem
+*.key
+
+# ---------- 运行时数据 ----------
+data/radio.db
+data/radio.db-journal
+data/radio.db-wal
+data/radio.db-shm
+data/runtime/
+data/tts-cache/
+data/logs/
+data/fallback-audio/
+/tmp/
+
+# ---------- 个人数据（品味导入与凭据缓存，可重新生成） ----------
+knowledge/user/taste-imports/
+*.b64.txt
+credentials.enc.json
+tokens.enc.json
+
+# ---------- 依赖 ----------
+node_modules/
+.pnpm-store/
+
+# ---------- 编辑器与系统 ----------
+.vscode/
+.idea/
+*.swp
+.DS_Store
+Thumbs.db
+desktop.ini
+
+# ---------- 日志与临时 ----------
+*.log
+npm-debug.log*
+*.tmp
+
+# ---------- 注意 ----------
+# knowledge/ 目录**必须提交** —— 它是电台的灵魂（语料即配置）。
+# 但如果你在语料里写了很私人的内容，可以自行把 knowledge/user/ 加入忽略。
