@@ -304,3 +304,53 @@ nav button.active { color: var(--fg); font-weight: 600; }
 .unlock-logo { font-size: 44px; animation: pulse 2.4s infinite; }
 .unlock-tip { color: var(--dim); font-size: 14px; }
 #unlock .primary { font-family: ui-monospace, Consolas, monospace; letter-spacing: 0.18em; padding: 12px 26px; }
+
+/* ============================================================
+   桌面控制台布局（≥1180px）：一屏放下全部内容
+   左列：时钟 + 队列 + 歌词｜中列：正在播 + DJ 字幕｜右列：聊天
+   ============================================================ */
+@media (min-width: 1180px) {
+  main { flex: 1; min-height: 0; height: auto; overflow: hidden; max-width: 1560px; padding: 14px 18px; }
+  .view { height: 100%; overflow-y: auto; }
+
+  #view-player.active {
+    display: grid;
+    overflow: hidden;
+    grid-template-columns: 320px minmax(0, 1fr) 350px;
+    grid-template-rows: auto minmax(0, 1fr) auto;
+    grid-template-areas:
+      "clock now       chat"
+      "queue transcript chat"
+      "lyrics transcript chat";
+    gap: 14px;
+    align-items: stretch;
+  }
+  #view-player.active > * { margin-bottom: 0; }
+
+  .clock-hero { grid-area: clock; padding: 4px 0; }
+  .clock-hero canvas { height: 96px; width: auto; max-width: 100%; }
+  .clock-meta { margin-top: 6px; }
+
+  .now-card { grid-area: now; min-height: 0; overflow: hidden; }
+  .wave-hero { height: 64px; }
+  .now-body { padding: 12px 16px 14px; }
+  .program { font-size: 22px; margin-bottom: 8px; }
+  .trackline { margin-bottom: 8px; }
+  .progress-row { margin-bottom: 8px; }
+  .transport { margin-bottom: 8px; }
+  .wave-mini { height: 20px; }
+  .say, .reason { display: none; }   /* 桌面上这些信息在字幕与聊天里都有，省高度 */
+
+  .queue-card { grid-area: queue; display: flex; flex-direction: column; min-height: 0; }
+  #queueList { flex: 1; min-height: 0; overflow-y: auto; }
+
+  .lyrics-card { grid-area: lyrics; }
+  #lyricsBox { height: 110px; }
+
+  .transcript-card { grid-area: transcript; display: flex; flex-direction: column; min-height: 0; }
+  .transcript { flex: 1; min-height: 0; max-height: none; }
+
+  .chat-card { grid-area: chat; display: flex; flex-direction: column; min-height: 0; }
+  .chatlog { flex: 1; min-height: 0; max-height: none; }
+  .chatrow { flex: none; }
+}
