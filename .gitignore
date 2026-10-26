@@ -13,6 +13,9 @@ data/runtime/
 data/tts-cache/
 data/logs/
 data/fallback-audio/
+data/tmp/
+data/backups/
+data/sapi-tmp/
 /tmp/
 
 # ---------- 个人数据（品味导入与凭据缓存，可重新生成） ----------
