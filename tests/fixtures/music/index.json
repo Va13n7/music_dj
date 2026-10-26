@@ -1,0 +1,178 @@
+{
+  "$description": "音乐 API 的真实响应 fixture，供 docs/12-testing-strategy.md §4.2 的回放测试使用。请勿手工编辑 —— 用 tools/record-music-fixtures.js 重录。",
+  "recordedAt": "2026-10-15T03:22:26.670Z",
+  "baseUrl": "https://music-api.gdstudio.xyz/api.php",
+  "note": "⚠️ 直链（url 响应中的 url 字段）是**临时 CDN 地址**，会过期。回放测试只应断言「字段结构与解析逻辑」，不应断言直链本身可访问。",
+  "cases": [
+    {
+      "name": "qingtian",
+      "source": "netease",
+      "query": "晴天",
+      "why": "实测首条返回的是翻唱「晴天(深情版)」。这是最有价值的噪声样本 —— 首选命中必须是原唱而非翻唱。",
+      "expectNote": "首选应为周杰伦原唱；含「深情版」「原唱 周杰伦」等翻唱标记的候选应被负向权重压低",
+      "noiseMarkers": [
+        "深情版",
+        "原唱",
+        "翻唱",
+        "cover"
+      ],
+      "files": {
+        "search": "search-qingtian.json",
+        "url": "url-qingtian.json",
+        "lyric": "lyric-qingtian.json",
+        "pic": "pic-qingtian.json"
+      },
+      "candidateCount": 10,
+      "topCandidate": {
+        "name": "晴天(深情版)",
+        "artist": [
+          "Lucky小爱"
+        ],
+        "id": "2652820720",
+        "url_id": "2652820720",
+        "lyric_id": "2652820720"
+      },
+      "noiseCandidates": [
+        {
+          "marker": "深情版",
+          "label": "晴天(深情版) — Lucky小爱"
+        },
+        {
+          "marker": "原唱",
+          "label": "晴天 (原唱 周杰伦) — RyaVocal"
+        },
+        {
+          "marker": "原唱",
+          "label": "晴天 (钢琴版) [原唱: 周杰伦] — 纪钧瀚 (Bryan Chi)"
+        }
+      ]
+    },
+    {
+      "name": "lizhi-xiayu",
+      "source": "netease",
+      "query": "李志 下雨",
+      "why": "真实可播放曲目（端到端验证过出直链），作为「正向」基准样本。",
+      "expectNote": "首选应为「下雨 - Fog forest/李志」",
+      "noiseMarkers": [
+        "伴奏",
+        "DJ",
+        "Remix"
+      ],
+      "files": {
+        "search": "search-lizhi-xiayu.json",
+        "url": "url-lizhi-xiayu.json",
+        "lyric": "lyric-lizhi-xiayu.json",
+        "pic": "pic-lizhi-xiayu.json"
+      },
+      "candidateCount": 8,
+      "topCandidate": {
+        "name": "下雨",
+        "artist": [
+          "Fog forest",
+          "李志"
+        ],
+        "id": "2682393767",
+        "url_id": "2682393767",
+        "lyric_id": "2682393767"
+      },
+      "noiseCandidates": [
+        {
+          "marker": "DJ",
+          "label": "眼睛在下雨-DJ沈浪版 (Remix) — 李志洲"
+        },
+        {
+          "marker": "Remix",
+          "label": "眼睛在下雨-DJ沈浪版 (Remix) — 李志洲"
+        },
+        {
+          "marker": "伴奏",
+          "label": "眼睛在下雨-DJ沈浪版 (伴奏) — 李志洲"
+        },
+        {
+          "marker": "DJ",
+          "label": "眼睛在下雨-DJ沈浪版 (伴奏) — 李志洲"
+        },
+        {
+          "marker": "DJ",
+          "label": "眼睛在下雨 (Dj沈念2021Remix) — 李志洲"
+        },
+        {
+          "marker": "Remix",
+          "label": "眼睛在下雨 (Dj沈念2021Remix) — 李志洲"
+        },
+        {
+          "marker": "伴奏",
+          "label": "眼睛在下雨 (Dj沈念2021Remix伴奏) — 李志洲"
+        },
+        {
+          "marker": "DJ",
+          "label": "眼睛在下雨 (Dj沈念2021Remix伴奏) — 李志洲"
+        },
+        {
+          "marker": "Remix",
+          "label": "眼睛在下雨 (Dj沈念2021Remix伴奏) — 李志洲"
+        },
+        {
+          "marker": "伴奏",
+          "label": "眼睛在下雨 (伴奏) — 李志洲"
+        }
+      ]
+    },
+    {
+      "name": "chenli-xiaoban",
+      "source": "netease",
+      "query": "陈粒 小半",
+      "why": "第二个正向样本，含多版本（原版/伴奏/remix），验证去重与版本选择。",
+      "expectNote": "首选应为陈粒本人版本",
+      "noiseMarkers": [
+        "伴奏",
+        "remix",
+        "DJ版",
+        "钢琴版"
+      ],
+      "files": {
+        "search": "search-chenli-xiaoban.json",
+        "url": "url-chenli-xiaoban.json",
+        "lyric": "lyric-chenli-xiaoban.json",
+        "pic": "pic-chenli-xiaoban.json"
+      },
+      "candidateCount": 10,
+      "topCandidate": {
+        "name": "小半",
+        "artist": [
+          "陈粒"
+        ],
+        "id": "421423806",
+        "url_id": "421423806",
+        "lyric_id": "421423806"
+      },
+      "noiseCandidates": []
+    },
+    {
+      "name": "joox-qingtian",
+      "source": "joox",
+      "query": "晴天",
+      "why": "joox 源的元数据/歌词质量优于 netease，但**不提供可播放直链**（docs/06 §4.1 的单点结论）。",
+      "expectNote": "search 可用；url 返回 `{\"url\":\"\",\"br\":-1,\"size\":0}` 空串 —— 用于断言「joox 不作播放替补」的回退逻辑。注意是空字符串而非缺字段，实现必须正则校验。",
+      "noiseMarkers": [],
+      "files": {
+        "search": "search-joox-qingtian.json",
+        "url": "url-joox-qingtian.json",
+        "lyric": "lyric-joox-qingtian.json",
+        "pic": "pic-joox-qingtian.json"
+      },
+      "candidateCount": 30,
+      "topCandidate": {
+        "name": "晴天",
+        "artist": [
+          "周杰倫"
+        ],
+        "id": "bLnv0PqDX_qAlIqapc+Okw==",
+        "url_id": "bLnv0PqDX_qAlIqapc+Okw==",
+        "lyric_id": "bLnv0PqDX_qAlIqapc+Okw=="
+      },
+      "noiseCandidates": []
+    }
+  ],
+  "fileCount": 16
+}

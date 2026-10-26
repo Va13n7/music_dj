@@ -1,0 +1,136 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<meta name="theme-color" content="#0b0b0f">
+<link rel="manifest" href="/manifest.webmanifest">
+<link rel="icon" href="data:,">
+<title>Claudiao 电台</title>
+<style>
+:root { --bg:#0b0b0f; --card:#15151c; --fg:#e8e6f0; --dim:#8a87a0; --accent:#7c6cff; }
+* { box-sizing: border-box; margin: 0; }
+body { background: var(--bg); color: var(--fg); font: 15px/1.6 system-ui, "Microsoft YaHei", sans-serif; min-height: 100vh; display: flex; flex-direction: column; }
+header { display: flex; align-items: center; gap: 8px; padding: 12px 16px; border-bottom: 1px solid #232330; }
+header .dot { width: 8px; height: 8px; border-radius: 50%; background: #444; }
+header .dot.live { background: #4cd97b; box-shadow: 0 0 6px #4cd97b; }
+header h1 { font-size: 15px; font-weight: 600; }
+main { flex: 1; padding: 16px; max-width: 720px; margin: 0 auto; width: 100%; }
+.view { display: none; } .view.active { display: block; }
+nav { display: flex; border-top: 1px solid #232330; }
+nav button { flex: 1; background: none; border: none; color: var(--dim); padding: 12px; font-size: 14px; cursor: pointer; }
+nav button.active { color: var(--accent); }
+.card { background: var(--card); border-radius: 12px; padding: 16px; margin-bottom: 12px; }
+.cover { width: 120px; height: 120px; border-radius: 8px; background: #222; object-fit: cover; float: left; margin-right: 14px; }
+.title { font-size: 18px; font-weight: 600; }
+.artist { color: var(--dim); }
+.say { margin-top: 12px; font-style: italic; color: #cfcbe8; }
+.reason { margin-top: 8px; font-size: 13px; color: var(--dim); }
+.badge { display: inline-block; font-size: 11px; background: #232330; color: var(--dim); border-radius: 6px; padding: 1px 8px; margin-right: 6px; }
+input[type=text], textarea { width: 100%; background: #0f0f16; border: 1px solid #2a2a3a; color: var(--fg); border-radius: 8px; padding: 10px; font: inherit; }
+textarea { min-height: 160px; resize: vertical; }
+button.primary { background: var(--accent); color: white; border: none; border-radius: 8px; padding: 10px 18px; font: inherit; cursor: pointer; }
+button.ghost { background: none; border: 1px solid #2a2a3a; color: var(--dim); border-radius: 8px; padding: 8px 14px; cursor: pointer; }
+.row { display: flex; gap: 8px; margin-top: 10px; }
+#unlock { position: fixed; inset: 0; background: rgba(11,11,15,.96); display: flex; align-items: center; justify-content: center; flex-direction: column; gap: 16px; z-index: 99; }
+#unlock.hidden { display: none; }
+.chatlog { margin-top: 10px; max-height: 220px; overflow-y: auto; font-size: 13px; }
+.chatlog div { padding: 4px 0; border-bottom: 1px dashed #232330; }
+.chatlog .u { color: var(--dim); }
+#lyricsBox { height: 102px; overflow: hidden; display: flex; flex-direction: column; justify-content: center; text-align: center; gap: 2px; }
+.lyr-slot { color: var(--dim); padding: 1px 0; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; font-size: 13px; transition: color .3s, opacity .3s; opacity: .55; }
+.lyr-slot.active { color: var(--accent); font-weight: 600; font-size: 15px; opacity: 1; }
+#lyricsBox.plain { white-space: pre-wrap; color: #cfcbe8; }
+#subtitleBar { min-height: 30px; margin-top: 10px; padding: 8px 14px; background: rgba(124,108,255,.12); border-radius: 8px; text-align: center; font-size: 16px; color: #dcd6ff; transition: opacity .4s; }
+table { width: 100%; border-collapse: collapse; font-size: 13px; }
+td, th { text-align: left; padding: 6px 8px; border-bottom: 1px solid #232330; }
+</style>
+</head>
+<body>
+<div id="unlock">
+  <div style="font-size:40px">🎧</div>
+  <div>浏览器要求点一下才能出声</div>
+  <button class="primary" id="unlockBtn">点一下开始收听</button>
+</div>
+<header>
+  <span class="dot" id="liveDot"></span><h1>Claudiao 电台</h1>
+  <span id="state" class="badge">IDLE</span>
+</header>
+<main>
+  <section class="view active" id="view-player">
+    <div class="card">
+      <img class="cover" id="cover" alt="" hidden>
+      <div class="title" id="title">还没开始播放</div>
+      <div class="artist" id="artist"></div>
+      <div style="clear:both"></div>
+      <div class="say" id="say"></div>
+      <div id="subtitleBar" hidden></div>
+      <div class="reason" id="why"></div>
+      <div class="row">
+        <button class="ghost" id="btnPrev">⏮</button>
+        <button class="ghost" id="btnPlayPause">▶</button>
+        <button class="ghost" id="btnSkip">⏭ 跳过</button>
+        <button class="ghost" id="btnVolDown">🔈</button>
+        <button class="ghost" id="btnVolUp">🔊</button>
+        <button class="ghost" id="btnRoaming" title="无限漫游：播完自动按你的口味续歌">🔀 漫游</button>
+      </div>
+      <div class="chatlog" id="chatlog"></div>
+      <div class="card" id="lyricsCard" style="margin-top:12px" hidden>
+        <div style="display:flex;justify-content:space-between;align-items:center">
+          <b style="font-size:14px">歌词</b>
+          <button class="ghost" id="btnLyricsToggle" style="padding:2px 10px;font-size:12px">收起</button>
+        </div>
+        <div id="lyricsBox" style="max-height:260px;overflow-y:auto;margin-top:8px"></div>
+      </div>
+    </div>
+    <div class="card">
+      <input type="text" id="chatInput" placeholder="点播 / 情绪 / 什么都行…">
+      <div class="row"><button class="primary" id="btnSend">发送</button><button class="ghost" id="btnRandom">随便放</button></div>
+    </div>
+  </section>
+  <section class="view" id="view-profile">
+    <div class="card">
+      <div style="margin-bottom:8px">我的品味语料（taste.md）· 版本 <span id="tasteSha" class="badge">-</span></div>
+      <textarea id="tasteEditor" spellcheck="false"></textarea>
+      <div class="row"><button class="primary" id="btnSaveTaste">保存</button><span id="tasteMsg" class="reason"></span></div>
+    </div>
+    <div class="card">
+      <div style="margin-bottom:4px"><b>歌单导入 → 品味画像</b></div>
+      <div class="reason" style="margin-bottom:8px">把你的网易云歌单交给大脑分析，生成专属品味画像；之后所有推荐自动按你的口味来。<br>歌单 ID：网页版打开歌单，地址栏 <code>id=</code> 后面的数字。歌单需设为公开。</div>
+      <input type="text" id="plIds" placeholder="歌单 ID，多个用逗号隔开">
+      <div class="row">
+        <button class="primary" id="btnPlImport">导入歌单</button>
+        <button class="primary" id="btnPlAnalyze">生成品味画像</button>
+      </div>
+      <div class="reason" id="plMsg"></div>
+      <div id="plResult" class="chatlog" hidden></div>
+    </div>
+    <div class="card">
+      <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:8px">
+        <b style="font-size:14px">品味画像（自动生成 · 每次播报的推荐依据）</b>
+        <button class="ghost" id="btnProfileToggle" style="padding:2px 10px;font-size:12px">展开</button>
+      </div>
+      <div id="profileMeta" class="reason" style="margin-bottom:6px">尚未生成——导入歌单后点「生成品味画像」</div>
+      <textarea id="profileBox" spellcheck="false" style="min-height:220px;display:none"></textarea>
+    </div>
+  </section>
+  <section class="view" id="view-settings">
+    <div class="card">
+      <table id="healthTable"></table>
+      <div class="row"><button class="ghost" id="btnRefreshHealth">刷新状态</button></div>
+    </div>
+    <div class="card reason">
+      提示：音色/引擎等环境配置在服务端 config/.env；这里只读展示运行状态。
+    </div>
+  </section>
+</main>
+<nav>
+  <button data-view="view-player" class="active">收音机</button>
+  <button data-view="view-profile">品味</button>
+  <button data-view="view-settings">设置</button>
+</nav>
+<audio id="audio"></audio>
+<audio id="voiceA"></audio>
+<script src="/app.js"></script>
+</body>
+</html>

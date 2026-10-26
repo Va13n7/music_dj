@@ -1,0 +1,170 @@
+# ============================================================
+# Claudiao 电台 · 节律调度配置
+# 被 src/layer2/scheduler.js 读取。改完需重启服务（调度表在启动时装载）。
+# 时段与语气的语义定义见 knowledge/user/routines.md。
+# ============================================================
+
+# 总开关。false = 只响应手动请求，不做任何主动播报。
+enabled: true
+
+# 时区。必须与 .env 的 TZ 一致。
+timezone: Asia/Shanghai
+
+# ------------------------------------------------------------
+# 静默时段：此区间内不做任何「主动」播报。
+# 用户主动发消息不受限制（说明人还醒着）。
+# 支持跨午夜（start > end）。
+# ------------------------------------------------------------
+quietHours:
+  start: "23:00"
+  end: "07:00"
+  # 静默期内是否仍然执行不发声的任务（如 daily_plan 规划）
+  allowSilentTasks: true
+
+# ------------------------------------------------------------
+# 免打扰时段：连静默以外的任务也全部跳过，且标记为 skipped 不补跑。
+# 对应 routines.md 的「不能被打扰的时刻」。
+# ------------------------------------------------------------
+doNotDisturb:
+  - start: "09:30"
+    end: "11:00"
+    days: [mon, tue, wed, thu, fri]
+    reason: "固定会议"
+
+# ------------------------------------------------------------
+# 长时段连续播放保护窗口：此区间内任何定时播报都让路。
+# 对应 routines.md 的「主动播报的节制规则」。
+# ------------------------------------------------------------
+protectedWindows:
+  - start: "09:15"
+    end: "12:00"
+    days: [mon, tue, wed, thu, fri]
+    reason: "上午专注"
+  - start: "14:00"
+    end: "17:30"
+    days: [mon, tue, wed, thu, fri]
+    reason: "下午专注"
+
+# ------------------------------------------------------------
+# 节制规则
+# ------------------------------------------------------------
+limits:
+  # 两次主动播报的最小间隔（分钟）
+  minIntervalMinutes: 45
+  # 每日主动播报上限（次）
+  dailyMaxBroadcasts: 8
+  # 用户交互在途时，定时播报排队而非打断
+  yieldToUserInteraction: true
+  # 连续失败/被跳过多少次后熔断，停止当日主动播报
+  consecutiveFailureBreaker: 3
+
+# ------------------------------------------------------------
+# 调度槽位
+# cron 采用 5 段格式: 分 时 日 月 周
+# graceMinutes: 系统休眠唤醒后的补跑宽限窗口（分钟）。0 = 不补跑。
+# ------------------------------------------------------------
+slots:
+  - name: daily_plan
+    cron: "0 7 * * *"
+    intent: scheduled_broadcast
+    silent: true          # 不发声，只生成规划并预热缓存
+    useBrain: true
+    graceMinutes: 300     # 07:00 前唤醒到 12:00 内都补
+    speakable: false
+    description: "生成当日时段规划，写入 plan 表；预热早间曲目与 TTS 缓存"
+
+  - name: morning
+    cron: "0 9 * * *"
+    intent: scheduled_broadcast
+    silent: false
+    useBrain: true
+    graceMinutes: 90      # 09:00–10:30 内唤醒都补
+    speakable: true
+    description: "早间播报：天气 + 日程 + 今日音乐主题"
+
+  - name: hourly_check
+    cron: "0 * * * *"
+    intent: scheduled_broadcast
+    silent: false
+    useBrain: true
+    graceMinutes: 0       # 整点检查不补跑，过了就过了
+    speakable: true
+    # 限定生效小时，避免全天打扰
+    hoursRange: [9, 22]
+    # 无新信息时保持沉默（天气未变、日程未变、无情绪信号时跳过）
+    skipWhenNoNews: true
+    description: "整点情绪检查"
+
+  - name: noon
+    cron: "0 12 * * *"
+    intent: scheduled_broadcast
+    silent: false
+    useBrain: true
+    graceMinutes: 60
+    speakable: true
+    description: "午间报时"
+
+  - name: evening
+    cron: "30 17 * * *"
+    intent: scheduled_broadcast
+    silent: false
+    useBrain: true
+    graceMinutes: 90
+    speakable: true
+    description: "傍晚过渡播报"
+
+  - name: night_wind_down
+    cron: "30 22 * * *"
+    intent: control       # 不走大脑，纯动作 + 一句话
+    silent: false
+    useBrain: false
+    graceMinutes: 0
+    speakable: true
+    description: "降能量、切睡前歌单，一句道晚安"
+
+  - name: calendar_hook
+    # 由日历事件驱动，非 cron。仅声明配置，由 calendar provider 主动触发。
+    cron: null
+    trigger: calendar
+    intent: scheduled_broadcast
+    silent: false
+    useBrain: true
+    graceMinutes: 0
+    speakable: true
+    # 事件前多久触发（分钟）
+    leadMinutes: 30
+    # 事件结束后是否也播报一次
+    notifyAfterEnd: true
+    description: "日历事件提醒"
+
+  - name: prefetch
+    # 持续运行的预热任务，由播放进度驱动，非定时
+    cron: null
+    trigger: playback
+    intent: prefetch
+    silent: true
+    useBrain: false
+    speakable: false
+    description: "预解析下一首直链、预合成 segue"
+
+# ------------------------------------------------------------
+# 休眠唤醒补跑策略
+# ------------------------------------------------------------
+wakeCatchUp:
+  # 是否启用补跑
+  enabled: true
+  # 超过宽限窗口的槽位标记为 skipped，而不是补一个过时的播报
+  staleMarkAs: skipped
+  # 唤醒后多久内认为「刚醒」，此时补跑最积极
+  freshWindowMinutes: 10
+
+# ------------------------------------------------------------
+# 幂等与锁
+# ------------------------------------------------------------
+idempotency:
+  # 幂等键格式: <date>|<slot>  例: 2026-10-15|morning
+  keyFormat: "{date}|{slot}"
+  # 超过此秒数仍未终结的触发布视为 stale，释放锁并标记 failed
+  staleSeconds: 90
+  # 是否允许同一 slot 在同一天被强制重跑（通过 API 手动触发时）
+  allowManualRerun: true

@@ -1,0 +1,107 @@
+[
+  {
+    "id": "2682393767",
+    "name": "下雨",
+    "artist": [
+      "Fog forest",
+      "李志"
+    ],
+    "album": "Demo",
+    "pic_id": "109951164481948349",
+    "url_id": "2682393767",
+    "lyric_id": "2682393767",
+    "source": "netease",
+    "from": "music.gdstudio.xyz"
+  },
+  {
+    "id": "2143095193",
+    "name": "下雨",
+    "artist": [
+      "小小徐不会弹吉他"
+    ],
+    "album": "悲伤的人不听理智",
+    "pic_id": "109951169474285849",
+    "url_id": "2143095193",
+    "lyric_id": "2143095193",
+    "source": "netease",
+    "from": "music.gdstudio.xyz"
+  },
+  {
+    "id": "2738149277",
+    "name": "眼睛在下雨-DJ沈浪版 (Remix)",
+    "artist": [
+      "李志洲"
+    ],
+    "album": "眼睛在下雨DJ",
+    "pic_id": "109951171901817656",
+    "url_id": "2738149277",
+    "lyric_id": "2738149277",
+    "source": "netease",
+    "from": "music.gdstudio.xyz"
+  },
+  {
+    "id": "2738149028",
+    "name": "眼睛在下雨-DJ沈浪版 (伴奏)",
+    "artist": [
+      "李志洲"
+    ],
+    "album": "眼睛在下雨DJ",
+    "pic_id": "109951171901817656",
+    "url_id": "2738149028",
+    "lyric_id": "2738149028",
+    "source": "netease",
+    "from": "music.gdstudio.xyz"
+  },
+  {
+    "id": "1818025931",
+    "name": "眼睛在下雨 (Dj沈念2021Remix)",
+    "artist": [
+      "李志洲"
+    ],
+    "album": "眼睛在下雨",
+    "pic_id": "109951165698264103",
+    "url_id": "1818025931",
+    "lyric_id": "1818025931",
+    "source": "netease",
+    "from": "music.gdstudio.xyz"
+  },
+  {
+    "id": "1818021541",
+    "name": "眼睛在下雨",
+    "artist": [
+      "李志洲"
+    ],
+    "album": "眼睛在下雨",
+    "pic_id": "109951165698264103",
+    "url_id": "1818021541",
+    "lyric_id": "1818021541",
+    "source": "netease",
+    "from": "music.gdstudio.xyz"
+  },
+  {
+    "id": "1818025933",
+    "name": "眼睛在下雨 (Dj沈念2021Remix伴奏)",
+    "artist": [
+      "李志洲"
+    ],
+    "album": "眼睛在下雨",
+    "pic_id": "109951165698264103",
+    "url_id": "1818025933",
+    "lyric_id": "1818025933",
+    "source": "netease",
+    "from": "music.gdstudio.xyz"
+  },
+  {
+    "id": "1818025932",
+    "name": "眼睛在下雨 (伴奏)",
+    "artist": [
+      "李志洲"
+    ],
+    "album": "眼睛在下雨",
+    "pic_id": "109951165698264103",
+    "url_id": "1818025932",
+    "lyric_id": "1818025932",
+    "source": "netease",
+    "from": "music.gdstudio.xyz"
+  }
+]

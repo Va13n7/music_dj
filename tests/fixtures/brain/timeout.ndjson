@@ -1,0 +1,3 @@
+{"type":"_meta","scenario":"timeout","synthetic":true,"delayMs":60000,"note":"只有 session 与 turn_start，之后卡住 → 用注入的短超时（如 200ms）跑，应抛 E_TIMEOUT"}
+{"type":"session","sessionId":"session-00000000-0000-4000-8000-000000000008","cwd":"<CWD>"}
+{"type":"status","phase":"turn_start","turn":1}

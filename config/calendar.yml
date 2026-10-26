@@ -1,0 +1,95 @@
+# ============================================================
+# Claudiao 电台 · 日历数据
+# 被 src/layer2/context.js 第 ③ 片「环境注入」与 scheduler 的 calendar_hook 读取。
+#
+# 这是最小可行方案：手写 YAML。可选升级为解析 config/calendar.ics（从系统日历导出）。
+# 语义说明见 knowledge/user/routines.md 第八节。
+# ============================================================
+
+version: 1
+timezone: Asia/Shanghai
+
+# ------------------------------------------------------------
+# 工作日 / 节假日覆盖
+# 用于 routines.md 的「工作日 / 周末判定」。
+# 不填则默认周一至周五为工作日。
+# ------------------------------------------------------------
+workdays:
+  # 调休上班的周末（示例）
+  # - "2026-10-11"
+
+holidays:
+  # 法定假日（示例）
+  # - date: "2026-10-01"
+  #   name: "国庆节"
+
+# ------------------------------------------------------------
+# 周期事件：每周固定重复
+# ------------------------------------------------------------
+weekly:
+  - day: mon
+    start: "10:00"
+    end: "11:00"
+    title: "周会"
+    # 是否提前提醒。leadMinutes 覆盖 routines.yml 的 calendar_hook.leadMinutes
+    remind: true
+    leadMinutes: 30
+    # 该事件对应的情绪档位（写入 context 第 ③ 片，供大脑参考）
+    mood: anxious
+    # 事件结束后是否播报一次
+    notifyAfterEnd: false
+
+  - day: fri
+    start: "17:00"
+    end: "18:00"
+    title: "周总结"
+    remind: true
+    leadMinutes: 15
+    mood: evening
+    notifyAfterEnd: true
+
+# ------------------------------------------------------------
+# 一次性事件
+# ------------------------------------------------------------
+events:
+  # - date: "2026-10-20"
+  #   start: "14:00"
+  #   end: "16:00"
+  #   title: "述职会"
+  #   remind: true
+  #   leadMinutes: 30
+  #   mood: anxious
+  #   notifyAfterEnd: true
+  #   important: true   # important=true 时即使处于静默时段也提醒
+
+# ------------------------------------------------------------
+# 特殊日期（年度重复）
+# 对应 routines.md 的「特殊日子」
+# ------------------------------------------------------------
+annual:
+  # - month: 3
+  #   day: 14
+  #   title: "纪念日"
+  #   mood: nostalgic
+  #   note: "放某首歌，多说两句"
+
+# ------------------------------------------------------------
+# 进入 context 第 ③ 片的格式
+# context.js 会把「今日相关事件」渲染成下面这样的文本注入 prompt。
+# 这是给大脑看的自然语言，不是给程序解析的结构化数据。
+# ------------------------------------------------------------
+injectionTemplate: |
+  ## 今日日程
+  {{#if events}}
+  {{#each events}}
+  - {{start}}–{{end}} {{title}}{{#if mood}}（情绪倾向：{{mood}}）{{/if}}
+  {{/each}}
+  {{else}}
+  今天没有已记录的日程。
+  {{/if}}
+
+# 无事件时是否注入「今天没有日程」这句话
+injectWhenEmpty: true
+
+# 最多注入多少个事件（避免 prompt 膨胀）
+maxEventsInjected: 5

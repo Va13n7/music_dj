@@ -1,0 +1,9 @@
+{"type":"_meta","scenario":"ok-with-usage","synthetic":false,"recordedAt":"2026-10-15T03:20:43.428Z","latencyMs":6738,"exitCode":0,"desc":"带 token 用量事件（step_end 里的 usage）"}
+{"type":"session","sessionId":"session-00000000-0000-4000-8000-000000000004","cwd":"<CWD>"}
+{"type":"status","phase":"turn_start","turn":1}
+{"type":"status","phase":"step_start","turn":1,"step":1}
+{"type":"thinking","text":""}
+{"type":"text","text":"{\"say\":\"用量测试。\",\"play\":[],\"reason\":\"usage fixture\",\"segue\":\"\"}"}
+{"type":"status","phase":"step_end","turn":1,"step":1,"usage":{"inputTokens":534,"outputTokens":22,"cacheReadTokens":5504,"cacheWriteTokens":0,"totalTokens":6060}}
+{"type":"status","phase":"turn_end","turn":1,"reason":{"kind":"completed"}}
+{"type":"final","text":"{\"say\":\"用量测试。\",\"play\":[],\"reason\":\"usage fixture\",\"segue\":\"\"}"}

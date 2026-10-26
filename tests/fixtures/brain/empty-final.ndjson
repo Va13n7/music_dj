@@ -1,0 +1,7 @@
+{"type":"_meta","scenario":"empty-final","synthetic":true,"exitCode":0,"note":"final.text 为空 → 应模板降级"}
+{"type":"session","sessionId":"session-00000000-0000-4000-8000-000000000012","cwd":"<CWD>"}
+{"type":"status","phase":"turn_start","turn":1}
+{"type":"status","phase":"step_start","turn":1,"step":1}
+{"type":"status","phase":"step_end","turn":1,"step":1}
+{"type":"status","phase":"turn_end","turn":1,"reason":{"kind":"completed"}}
+{"type":"final","text":""}

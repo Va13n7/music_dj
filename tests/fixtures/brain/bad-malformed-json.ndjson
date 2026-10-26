@@ -1,0 +1,8 @@
+{"type":"_meta","scenario":"bad-malformed-json","synthetic":true,"exitCode":0,"note":"JSON 截断，不可修复 → 重试 1 次"}
+{"type":"session","sessionId":"session-00000000-0000-4000-8000-000000000005","cwd":"<CWD>"}
+{"type":"status","phase":"turn_start","turn":1}
+{"type":"status","phase":"step_start","turn":1,"step":1}
+{"type":"text","text":"{\"say\":\"这句话说到一半就断了\",\"play\":["}
+{"type":"status","phase":"step_end","turn":1,"step":1}
+{"type":"status","phase":"turn_end","turn":1,"reason":{"kind":"completed"}}
+{"type":"final","text":"{\"say\":\"这句话说到一半就断了\",\"play\":["}

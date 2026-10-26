@@ -1,0 +1,111 @@
+# ============================================================
+# Claudiao 电台 · 主配置
+# 与 .env 的分工：
+#   .env    —— 机密、路径、环境相关（每台机器不同）
+#   radio.yml —— 业务行为调参（可提交、可共享）
+# ============================================================
+
+version: 1
+
+# ------------------------------------------------------------
+# 播放行为
+# ------------------------------------------------------------
+playback:
+  # 单次播报最多安排几首曲目（对应 dj-persona.md 的 play 上限 5）
+  maxTracksPerBroadcast: 5
+  # 同一曲目在这个小时内不重复播放
+  avoidRecentHours: 24
+  # 曲目剩余多少秒时预取/预合成 segue（施工图的 prefetch 10s）
+  prefetchLeadSeconds: 10
+  # 判定「完整听完」的时长比例
+  completeListenRatio: 0.9
+  # 判定「跳过」的时长比例（低于此值算跳过，进短期排除）
+  skipRatio: 0.3
+  # 连续跳过多少首后切换情绪档位
+  consecutiveSkipsBeforeSwitch: 3
+  # 暂停后多久无操作则停止推流回 IDLE（分钟）
+  idleAfterPauseMinutes: 30
+
+# ------------------------------------------------------------
+# 覆盖式规则：把播报内容限制在可控范围
+# ------------------------------------------------------------
+broadcast:
+  # say 文本长度上限（字）。超出会被截断到最近句末标点。
+  maxSayChars: 200
+  # segue 文本长度上限
+  maxSegueChars: 80
+  # reason 长度上限
+  maxReasonChars: 100
+  # 是否允许 play 为空数组（纯口播）。必须为 true —— 天气/日程播报就是纯口播。
+  allowEmptyPlay: true
+  # 大脑返回的 play 元素必须匹配此格式，不匹配则丢弃该元素
+  trackRefPattern: "^(?<artist>.+?) - (?<title>.+)$"
+
+# ------------------------------------------------------------
+# 降级链开关（对应设计总览 §5.2）
+# 任何一项设为 false 都意味着该环节失败时直接放弃，请谨慎。
+# ------------------------------------------------------------
+degradation:
+  # 语料缺失 → 用内置默认语料
+  defaultCorpusOnMissing: true
+  # 大脑失败 → 用模板播报
+  templateOnBrainFailure: true
+  # 音乐解析失败 → 用本地兜底音频
+  fallbackAudioOnResolveFailure: true
+  # TTS 失败 → 跳过语音直接放歌
+  musicOnlyOnTtsFailure: true
+
+# ------------------------------------------------------------
+# 缓存
+# ------------------------------------------------------------
+cache:
+  # TTS 缓存目录容量
+  ttsMaxFiles: 2000
+  ttsMaxBytes: 524288000 # 500 MB
+  # 清理策略: lru | fifo
+  ttsEviction: lru
+  # 语料文件变化检测间隔（秒）。语料改动后最迟这么久生效。
+  corpusWatchIntervalSeconds: 30
+
+# ------------------------------------------------------------
+# 可观测性
+# ------------------------------------------------------------
+observability:
+  # 是否记录每次大脑调用的 token 用量到 SQLite
+  recordBrainUsage: true
+  # 是否在 /api/plan/today 返回 reason（DJ 的选曲理由）
+  exposeReason: true
+  # 健康检查端点 /api/health 是否暴露细节（brain/tts/music 各自可用性）
+  healthDetail: true
+  # 每日总结写回 state.db 的时间
+  dailySummaryAt: "23:50"
+
+# ------------------------------------------------------------
+# 安全
+# ------------------------------------------------------------
+security:
+  # 非本机访问时必须带令牌（.env 的 RADIO_AUTH_TOKEN）
+  requireTokenForNonLocal: true
+  # /tts/*.mp3 是否也校验令牌（默认否，便于 <audio> 标签直接引用）
+  protectTtsRoutes: false
+  # 允许的静态文件扩展名白名单（防止路径穿越读任意文件）
+  staticAllowlist: [".mp3", ".wav", ".jpg", ".jpeg", ".png", ".webp", ".json", ".js", ".css", ".html", ".webmanifest", ".svg", ".ico"]
+  # 请求体大小上限
+  maxBodyBytes: 65536
+
+# ------------------------------------------------------------
+# 前端
+# ------------------------------------------------------------
+frontend:
+  # PWA 显示名
+  appName: "Claudiao 电台"
+  # 主题色
+  themeColor: "#0b0b0f"
+  # WS 重连退避基数（毫秒），实际延迟 = base * 2^attempt + jitter
+  wsReconnectBaseMs: 500
+  # WS 重连最大退避
+  wsReconnectMaxMs: 15000
+  # WS 心跳间隔（秒）
+  wsHeartbeatSeconds: 25
+  # 断线时降级为轮询 /api/now 的间隔（秒）
+  fallbackPollSeconds: 5

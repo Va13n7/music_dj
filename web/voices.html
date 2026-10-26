@@ -1,0 +1,94 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Claudiao · DJ 音色试听</title>
+<style>
+body { background:#0b0b0f; color:#e8e6f0; font:15px/1.7 system-ui,"Microsoft YaHei",sans-serif; max-width:760px; margin:0 auto; padding:24px; }
+h1 { font-size:18px; } h2 { font-size:15px; color:#7c6cff; margin:24px 0 8px; }
+.card { background:#15151c; border-radius:10px; padding:14px 16px; margin-bottom:10px; display:flex; align-items:center; gap:14px; flex-wrap:wrap; }
+.name { width: 300px; } .name b { display:block; } .name span { color:#8a87a0; font-size:12px; }
+audio { flex:1; min-width: 260px; }
+.cur { color:#4cd97b; font-size:12px; border:1px solid #4cd97b; border-radius:6px; padding:0 6px; }
+.note { color:#8a87a0; font-size:13px; margin-top:20px; }
+code { background:#232330; padding:1px 6px; border-radius:4px; }
+</style>
+</head>
+<body>
+<h1>DJ 音色试听</h1>
+<p>挑好了就改 <code>config\.env</code> 里的 <code>TTS_VOICE</code>（和 <code>TTS_PITCH</code>），重启 <code>npm start</code> 生效。当前配置：<b>YunjianNeural · pitch -12Hz</b>（中文）＋ <b>AndrewMultilingualNeural · pitch -12Hz</b>（英文）。</p>
+
+<h2>目标音色对比（2026-10-19 匹配）</h2>
+<div class="card"><div class="name"><b>你的目标样本</b><span>你发来的 MP3（基频中位 110Hz）</span></div><audio controls preload="none" src="/tts/samples/target-original.mp3"></audio></div>
+<div class="card"><div class="name"><b>当前 DJ：Andrew -13Hz <span class="cur">基频 107Hz · 已生效</span></b><span>英文播报实测（与目标差 -3Hz）</span></div><audio controls preload="none" src="/tts/samples/tuned-andrew13.mp3"></audio></div>
+<div class="card"><div class="name"><b>参考：中文版 Yunyang -24Hz</b><span>基频 108Hz（若切回中文 DJ 的最接近配置）</span></div><audio controls preload="none" src="/tts/samples/tuned-yy-24.mp3"></audio></div>
+
+<h2>中文男声（同一句试听词）</h2>
+<div class="card"><div class="name"><b>云健 Yunjian <span class="cur">当前 · pitch -12Hz</span></b><span>磁性偏厚，最接近"深夜电台"</span></div><audio controls preload="none" src="/tts/samples/zh-yunjian-deep.mp3"></audio></div>
+<div class="card"><div class="name"><b>云健 Yunjian <span class="cur">原调 +0Hz 对比</span></b><span>同音色不压音调——听 pitch 的差别</span></div><audio controls preload="none" src="/tts/samples/zh-yunjian-normal.mp3"></audio></div>
+<div class="card"><div class="name"><b>云希 Yunxi <span class="cur">pitch -12Hz</span></b><span>阳光年轻，压低后偏少年感</span></div><audio controls preload="none" src="/tts/samples/zh-yunxi-deep.mp3"></audio></div>
+<div class="card"><div class="name"><b>云扬 Yunyang <span class="cur">pitch -12Hz</span></b><span>专业播音腔，字正腔圆</span></div><audio controls preload="none" src="/tts/samples/zh-yunyang-deep.mp3"></audio></div>
+<div class="card"><div class="name"><b>云夏 Yunxia</b><span>偏少年清亮（原调）</span></div><audio controls preload="none" src="/tts/samples/zh-yunxia.mp3"></audio></div>
+
+<h2>英文男声（DJ_LANG=en 时使用）</h2>
+<div class="card"><div class="name"><b>Andrew Multilingual <span class="cur">当前 · pitch -12Hz</span></b><span>深沉自然，多语言（中文歌名不崩）</span></div><audio controls preload="none" src="/tts/samples/en-andrew.mp3"></audio></div>
+<div class="card"><div class="name"><b>Christopher <span class="cur">pitch -12Hz</span></b><span>美式沉稳低音</span></div><audio controls preload="none" src="/tts/samples/en-christopher.mp3"></audio></div>
+<div class="card"><div class="name"><b>Guy <span class="cur">pitch -12Hz</span></b><span>美式活力</span></div><audio controls preload="none" src="/tts/samples/en-guy.mp3"></audio></div>
+<div class="card"><div class="name"><b>Ryan（英式） <span class="cur">pitch -12Hz</span></b><span>伦敦腔</span></div><audio controls preload="none" src="/tts/samples/en-ryan-gb.mp3"></audio></div>
+
+<h2>全量音色库（<span id="vcount">…</span> 个，点 ▶ 即时试音）</h2>
+<div class="card"><input type="text" id="vsearch" placeholder="搜索：zh / en / ja / deep / 筛 locale 或名字…" style="width:100%"></div>
+<div id="allVoices"><div class="card">加载音色目录中…</div></div>
+
+<p class="note">样本与正式播报同一合成引擎（edge-tts），听到的即最终效果。音调可继续微调：<code>TTS_PITCH=-20Hz</code> 更低沉，<code>-6Hz</code> 更自然。</p>
+
+<script>
+// 全量音色库：目录 + 即时试音
+(async () => {
+  const token = new URLSearchParams(location.search).get('token');
+  const qs = token ? '?token=' + encodeURIComponent(token) : '';
+  let voices = [];
+  try {
+    const r = await fetch('/api/tts/voices' + qs);
+    const j = await r.json();
+    voices = j.voices || [];
+    document.getElementById('vcount').textContent = j.count;
+  } catch { document.getElementById('vcount').textContent = '加载失败'; return; }
+
+  const cur = (n) => n === 'zh-CN-YunyangNeural' ? ' <span class="cur">中文候选</span>' : (n === 'en-US-AndrewMultilingualNeural' ? ' <span class="cur">英文候选</span>' : '');
+  function render(list) {
+    const box = document.getElementById('allVoices');
+    box.innerHTML = '';
+    const groups = {};
+    for (const v of list) (groups[v.locale] = groups[v.locale] || []).push(v);
+    for (const locale of Object.keys(groups).sort()) {
+      const h = document.createElement('div'); h.style.cssText = 'color:#7c6cff;font-size:13px;margin:14px 0 6px';
+      h.textContent = locale + '（' + groups[locale].length + '）';
+      box.appendChild(h);
+      for (const v of groups[locale]) {
+        const card = document.createElement('div'); card.className = 'card';
+        card.innerHTML = '<div class="name"><b>' + v.name.replace(/Neural$/, '') + cur(v.name) + '</b><span>' + (v.gender === 'Male' ? '男' : '女') + ' · ' + (v.description || '').slice(0, 60) + '</span></div>';
+        const btn = document.createElement('button'); btn.className = 'ghost'; btn.textContent = '▶ 试音';
+        const au = document.createElement('audio'); au.controls = true; au.preload = 'none'; au.style.flex = '1';
+        btn.addEventListener('click', async () => {
+          btn.disabled = true; btn.textContent = '合成中…';
+          au.src = '/api/tts/preview' + qs + (qs ? '&' : '?') + 'voice=' + encodeURIComponent(v.name);
+          au.play().catch(() => {});
+          au.addEventListener('canplay', () => { btn.textContent = '▶ 试音'; btn.disabled = false; }, { once: true });
+          setTimeout(() => { btn.textContent = '▶ 试音'; btn.disabled = false; }, 15000);
+        });
+        card.appendChild(btn); card.appendChild(au);
+        box.appendChild(card);
+      }
+    }
+  }
+  render(voices);
+  document.getElementById('vsearch').addEventListener('input', (e) => {
+    const q = e.target.value.toLowerCase();
+    render(voices.filter(v => (v.name + ' ' + v.locale + ' ' + v.gender + ' ' + (v.description || '')).toLowerCase().includes(q)));
+  });
+})();
+</script>
+</body>
+</html>
