@@ -66,10 +66,11 @@ button { font: inherit; color: inherit; cursor: pointer; }
   backdrop-filter: blur(10px);
   position: sticky; top: 0; z-index: 20;
 }
-.brand { display: flex; align-items: center; gap: 10px; min-width: 0; }
+.brand { display: flex; align-items: center; gap: 10px; min-width: 0; overflow: hidden; }
 .brand canvas { display: block; height: 14px; }
 .brand-sub { font-size: 10px; color: var(--dim); white-space: nowrap; }
-.topbar-right { display: flex; align-items: center; gap: 10px; }
+@media (max-width: 560px) { .brand-sub { display: none; } }
+.topbar-right { display: flex; align-items: center; gap: 10px; flex: none; }
 .theme-seg { display: flex; border: 1px solid var(--line2); border-radius: 999px; overflow: hidden; font-size: 10px; }
 .theme-seg button { background: none; border: none; color: var(--dim); padding: 4px 10px; font-size: 10px; letter-spacing: 0.12em; white-space: nowrap; }
 .theme-seg button.on { background: var(--fg); color: var(--bg); }

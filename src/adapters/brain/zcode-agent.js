@@ -163,6 +163,11 @@ export class ZcodeAgentAdapter {
 
     this.builtinConfigFile = this.env.CLAUDIAO_ZCODE_BUILTIN_CONFIG || findBuiltinProviderConfig();
     this.apiKey = resolveCodingPlanApiKey(this.providerId, os.homedir(), this.env);
+    // 直连 API Key（BigModel 开放平台）：2026-10-26 起的主路径。桌面端 OAuth 化后，
+    // 编码计划模型在无头子进程里不再物化（registry 门控），personal provider +
+    // 开放平台 key 是官方支持的旁路。key 经运行时生成的 personal provider 配置
+    // 注入（data/runtime/，gitignored），不进子进程环境变量。
+    this.directApiKey = (this.env.BIGMODEL_API_KEY || '').trim();
 
     this.child = null;
     this.rl = null;
@@ -180,12 +185,12 @@ export class ZcodeAgentAdapter {
     process.on('exit', this._exitHook);
   }
 
-  /** 同步能力位：CLI/内置配置/API key 三者齐备且熔断未开 */
+  /** 同步能力位：CLI/内置配置/凭据（编码计划或直连 key 二选一）齐备且熔断未开 */
   available() {
     if (Date.now() < this.circuitOpenUntil) return false;
     return Boolean(this.cliPath && fs.existsSync(this.cliPath)
       && this.builtinConfigFile && fs.existsSync(this.builtinConfigFile)
-      && this.apiKey);
+      && (this.apiKey || this.directApiKey));
   }
 
   /** 缺什么（doctor / 启动自检用） */
@@ -195,8 +200,8 @@ export class ZcodeAgentAdapter {
     if (!this.builtinConfigFile || !fs.existsSync(this.builtinConfigFile)) {
       missing.push('未找到桌面端缓存的 zcode-builtin.json（~/.zcode/v2/runtime/provider/...），确认 ZCode 桌面端已登录');
     }
-    if (!this.apiKey) {
-      missing.push(`凭据里没有 ${this.providerId} 的 API key，且未设置 CLAUDIAO_ZCODE_API_KEY`);
+    if (!this.apiKey && !this.directApiKey) {
+      missing.push(`凭据里没有 ${this.providerId} 的 API key/OAuth 令牌，且未设置 BIGMODEL_API_KEY`);
     }
     return missing;
   }
@@ -211,8 +216,39 @@ export class ZcodeAgentAdapter {
       if (this.env[k] !== undefined) env[k] = this.env[k];
     }
     env.ZCODE_BUILTIN_PROVIDER_CONFIG_FILE = this.builtinConfigFile;
-    const personal = path.join(os.homedir(), '.zcode', 'v2', 'provider_config.json');
-    if (fs.existsSync(personal)) env.ZCODE_PERSONAL_PROVIDER_CONFIG_FILE = personal;
+    // 直连 key 路径：运行时生成 personal provider 配置（含 key），子进程经
+    // ZCODE_PERSONAL_PROVIDER_CONFIG_FILE 读它——模型注册表与请求鉴权全部走这里。
+    if (this.directApiKey) {
+      try {
+        const cfgFile = path.join(this.root, 'data', 'runtime', 'claudiao-provider-config.json');
+        const cfg = {
+          schemaVersion: 1,
+          config: {
+            providerConfigRules: { providerRules: [ {
+              providerId: 'personal:claudiao-brain',
+              providerName: 'Claudiao Brain',
+              config: {
+                group: 'standard-personal',
+                access: { type: 'api-key', apiKey: this.directApiKey },
+                api: { type: 'anthropic-messages', baseUrl: 'https://open.bigmodel.cn/api/anthropic' },
+                personalModelIds: [this.modelId],
+              },
+            } ] },
+            modelConfigRules: { providerModelRules: [], manualProviderModelRules: [] },
+            defaultModelSelection: { providerId: 'personal:claudiao-brain', modelId: this.modelId },
+          },
+        };
+        fs.mkdirSync(path.dirname(cfgFile), { recursive: true });
+        fs.writeFileSync(cfgFile, JSON.stringify(cfg));
+        env.ZCODE_PERSONAL_PROVIDER_CONFIG_FILE = cfgFile;
+      } catch (e) {
+        this.log('warn', 'personal provider 配置生成失败，回退编码计划路径', { error: e.message });
+      }
+    }
+    if (!env.ZCODE_PERSONAL_PROVIDER_CONFIG_FILE) {
+      const personal = path.join(os.homedir(), '.zcode', 'v2', 'provider_config.json');
+      if (fs.existsSync(personal)) env.ZCODE_PERSONAL_PROVIDER_CONFIG_FILE = personal;
+    }
 
     // 运行时选择：桌面端 Electron 自带的 node（24.x，node:sqlite 与新 CLI 的迁移匹配）
     // 优先；本机 node（22.x 的实验 sqlite 跑不动新版 CLI 的 0024 迁移）兜底。
@@ -457,6 +493,31 @@ export class ZcodeAgentAdapter {
     }
   }
 
+  /** 从 session/messages 响应里提取本轮的 assistant 正文与 usage */
+  _extractTurnOutput(msgs, started) {
+    const texts = [];
+    let usage = null;
+    for (const m of msgs?.messages || []) {
+      if (m.info?.role !== 'assistant' || m.info?.semantics?.origin === 'system') continue;
+      const created = m.info?.time?.created || 0;
+      if (created && created < started - 1500) continue;
+      for (const p of m.parts || []) {
+        if (p.type === 'text' && typeof p.text === 'string' && p.text.trim()) {
+          texts.push(p.text);
+          const t = m.info.tokens || {};
+          usage = {
+            inputTokens: t.input || 0,
+            outputTokens: (t.output || 0) + (t.reasoning || 0),
+            cacheReadTokens: t.cache?.read || 0,
+            cacheWriteTokens: t.cache?.write || 0,
+            totalTokens: t.total || ((t.input || 0) + (t.output || 0)),
+          };
+        }
+      }
+    }
+    return { texts, usage };
+  }
+
   async _computeOnce(promptText, timeoutMs, opts) {
     if (opts.resetSession) this._resetSession();
     await this._ensureServer();
@@ -481,32 +542,22 @@ export class ZcodeAgentAdapter {
       }
       let msgs;
       try {
-        msgs = await this._request('session/messages', { sessionId, limit: 6 }, 10000);
+        msgs = await this._request('session/messages', { sessionId, limit: 30 }, 10000);
       } catch (e) {
         if (Date.now() >= deadline) break;
         continue;                                                        // 单次读失败继续轮询
       }
-      const texts = [];
-      let usage = null;
-      for (const m of msgs?.messages || []) {
-        if (m.info?.role !== 'assistant' || m.info?.semantics?.origin === 'system') continue;
-        // 恢复的会话里有历史消息：只认本轮发出之后产生的正文
-        const created = m.info?.time?.created || 0;
-        if (created && created < started - 1500) continue;
-        for (const p of m.parts || []) {
-          if (p.type === 'text' && typeof p.text === 'string' && p.text.trim()) {
-            texts.push(p.text);
-            const t = m.info.tokens || {};
-            usage = {
-              inputTokens: t.input || 0,
-              outputTokens: (t.output || 0) + (t.reasoning || 0),
-              cacheReadTokens: t.cache?.read || 0,
-              cacheWriteTokens: t.cache?.write || 0,
-              totalTokens: t.total || ((t.input || 0) + (t.output || 0)),
-            };
-          }
-        }
+      if (Math.floor((Date.now() - started) / 10000) !== Math.floor((Date.now() - started - 700) / 10000)) {
+        const asst = (msgs?.messages || []).find((m) => m.info?.role === 'assistant');
+        this.log('info', 'brain 轮询诊断', {
+          n: msgs?.messages?.length || 0,
+          roles: (msgs?.messages || []).map((m) => `${m.info?.role}/${m.info?.semantics?.origin}`).join(','),
+          textParts: (msgs?.messages || []).reduce((a, m) => a + (m.parts || []).filter((p) => p.type === 'text').length, 0),
+          asstCreated: asst?.info?.time?.created,
+          asstParts: asst ? JSON.stringify(asst.parts).slice(0, 400) : null,
+        });
       }
+      const { texts, usage } = this._extractTurnOutput(msgs, started);
       if (texts.length) {
         this.sessionTurns += 1;
         this._saveSessionState();
@@ -518,8 +569,24 @@ export class ZcodeAgentAdapter {
         };
       }
     }
-    // 超时：停掉本轮 turn，会话留到下轮复用（agent 侧会话状态仍一致）
+    // 超时：0.17.0 观察到 turn 收尾会挂起——模型流完成后 assistant 正文要等会话
+    // 中止才在 session/messages 里可见。先 session/stop 中止，再做最后一次读取。
     try { await this._request('session/stop', { sessionId }, 5000); } catch { /* ignore */ }
+    try {
+      const msgs = await this._request('session/messages', { sessionId, limit: 30 }, 10000);
+      const { texts, usage } = this._extractTurnOutput(msgs, started);
+      if (texts.length) {
+        this.sessionTurns += 1;
+        this._saveSessionState();
+        this.log('info', 'brain 超时兜底读取命中', { chars: texts[texts.length - 1].length });
+        return {
+          text: texts[texts.length - 1],
+          usage,
+          sessionId,
+          raw: { latencyMs: Date.now() - started, attempts: 1 },
+        };
+      }
+    } catch { /* 兜底读取失败就走超时路径 */ }
     throw new BrainError('E_TIMEOUT', `brain turn 超时（>${timeoutMs}ms）`);
   }
 
