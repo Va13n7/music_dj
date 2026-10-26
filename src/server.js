@@ -229,7 +229,11 @@ export function createServer(deps = {}) {
   });
   app.post('/api/roaming/next', requireAuth, async (req, res) => {
     const clientIndex = Number.isFinite(Number(req.body?.index)) ? Number(req.body.index) : undefined;
-    const r = await compute.roamNext({ clientIndex });
+    // 客户端上报的在队/已推清单：漫游避重的第一手材料（服务端另有 24h 播过自查）
+    const queueSpecs = Array.isArray(req.body?.queue)
+      ? req.body.queue.filter((x) => typeof x === 'string' && x.trim()).slice(0, 200)
+      : [];
+    const r = await compute.roamNext({ clientIndex, queueSpecs });
     res.json({ ok: true, ...r });
   });
 

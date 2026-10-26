@@ -85,7 +85,8 @@ export class BrainService {
           timeoutMs: opts.timeoutMs ?? this.timeoutMs,
           resetSession: i > 1,
         });
-        const parsed = parseDjAction(r.text, { maxSay: this.djLang === 'en' ? 500 : 200 });
+        // 英文 say 契约允许 40~120 词（≈750 字符），上限 800 才不会每轮都截断
+        const parsed = parseDjAction(r.text, { maxSay: this.djLang === 'en' ? 800 : 200 });
         // 会话膨胀治理：input tokens 超阈值 → 轮换会话（否则多轮历史拖慢每一次大脑）
         const inTok = r.usage?.inputTokens ?? 0;
         if (inTok > (this.env?.inputTokenRotate ?? 30000)) {

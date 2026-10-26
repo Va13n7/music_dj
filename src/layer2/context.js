@@ -37,7 +37,7 @@ const OUTPUT_CONTRACT_ZH = `
 
 硬规则：
 1. **曲库是网易云音乐全库**（华语/欧美/日韩等全部可点）。PLAYLISTS 只是常备精选池，不是边界：用户点播任何真实存在的歌手或歌曲，直接把确信的真实歌名写进 \`play\`（格式 \`"艺人 - 曲名"\`）。系统会自动搜索校验并解析直链，解析不出会自动降级——**绝不要以「曲库没备」「没这首歌」为由拒绝用户**。不确定歌名时优先参考 INPUT 里的搜索候选。
-2. 遵守 MEMORY：24 小时内播过的曲目不要重复（用户明确要求时除外）。
+2. **发散探索，别炒冷饭**：MEMORY 列出的近期曲目一律避开（用户亲口点名的除外）。不要总选最著名的那几首——同一位艺人本次 play 里最多 1 首；在用户要的风格里往深处挖：知名度一般的佳作、B 面好歌、不同年代的非代表作都欢迎。目标是丰富曲库，不是复读经典。
 3. **intros 必须逐首覆盖**：\`intros[i]\` 是 \`play[i]\` 的口播稿。每句都要接住「此刻」——时间、用户刚说的话、心情、天气，再落到这首本身（编曲/嗓音/年代感）。禁止三句一个模板换歌名；禁止复述歌名代替理由。
 4. 只输出 JSON 本身。第一个字符必须是 \`{\`，最后一个字符必须是 \`}\`。
 `.trim();
@@ -58,7 +58,7 @@ Reply with **one JSON object** — no markdown fences, no explanations, no prefi
 
 Hard rules:
 1. **The music library is the entire NetEase catalog** (Chinese/Western/J-pop all available). PLAYLISTS is just a preset pool, NOT the boundary: for any real artist or song the user asks for, write the real title you are confident exists into \`play\`. The system auto-searches and resolves links; failures degrade gracefully — **never refuse with "not in the library"**. Prefer the search candidates in INPUT when unsure.
-2. Respect MEMORY: don't repeat tracks played in the last 24h (unless the user explicitly asks).
+2. **Explore, don't recycle**: avoid every track listed in MEMORY (unless the user explicitly names it). Max 1 song per artist in this batch; dig deeper within the requested style — lesser-known gems, B-sides, deep cuts across decades. Enrich the library; never recycle the same famous few.
 3. **\`intros\` must cover every track**: \`intros[i]\` is the spoken intro for \`play[i]\`. Each line connects to THIS moment — time of day, what the user just said, the mood, the weather — then lands on the track itself (arrangement, voice, era). Never three lines from one template with a swapped title; never just repeat the song name.
 4. Output the JSON itself only. First char \`{\`, last char \`}\`.
 `.trim();
@@ -135,14 +135,17 @@ export async function build(intent, opts = {}) {
   const localTime = `${now.getFullYear()}-${p2(now.getMonth() + 1)}-${p2(now.getDate())} ${p2(now.getHours())}:${p2(now.getMinutes())} ${['周日','周一','周二','周三','周四','周五','周六'][now.getDay()]}`;
   const envText = opts.envText || `now: ${localTime}\nweather: 未配置（不要编造天气）\ncalendar: ${opts.calendarText || '空'}`;
 
-  // ④ 记忆：最近 10 次播放 + 最近 6 条对话（state 可选——离线单测不传）
+  // ④ 记忆：近 40 次播放（含艺人，供大脑避重）+ 最近 6 条对话（state 可选——离线单测不传）
   let memory = '（无历史记录）';
   if (opts.state) {
     try {
-      const plays = opts.state.recentPlays(10);
+      const plays = opts.state.recentPlays(40);
       const msgs = opts.state.recentMessages(6);
       memory = [
-        plays.length ? `近 ${plays.length} 次播放: ${plays.map((p) => `${p.title}(${p.skipped ? '跳过' : '完播'})`).join(' / ')}` : '近 10 次播放: （空）',
+        plays.length
+          ? `近 ${plays.length} 次播放（旧→新）:\n${plays.map((p) => `- ${p.artist ? `${p.artist} - ` : ''}${p.title}（${p.skipped ? '跳过' : '完播'}）`).join('\n')}`
+          : '近期播放: （空）',
+        '↑ 以上曲目都是最近播过的：选曲一律避开（用户本次亲口点名的除外），并且同一位艺人在本批 play 里最多出现 1 首。',
         msgs.length ? `近 ${msgs.length} 条对话:\n${msgs.map((m) => `[${m.role}] ${String(m.text).slice(0, 60)}`).join('\n')}` : '',
       ].filter(Boolean).join('\n');
     } catch { /* 状态库异常不阻塞 */ }

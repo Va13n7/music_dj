@@ -112,7 +112,7 @@ export function parseDjAction(rawText, { maxSay = 200, maxIntro = 160 } = {}) {
   return { action: normalizeAndValidate(obj, { maxSay, maxIntro }), path, repairs };
 }
 
-/** 步骤 9 + 10：归一化与校验（上限取自 docs/03 §4.2；英文模式 maxSay 放宽到 500 字符） */
+/** 步骤 9 + 10：归一化与校验（上限取自 docs/03 §4.2；英文模式 maxSay 放宽到 800 字符） */
 export function normalizeAndValidate(o, { maxSay = 200, maxIntro = 160 } = {}) {
   if (!o || typeof o !== 'object' || Array.isArray(o)) {
     throw Object.assign(new Error('DjAction 不是对象'), { code: 'E_BRAIN_PARSE' });

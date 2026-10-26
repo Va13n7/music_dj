@@ -35,6 +35,15 @@ function broadcastId(now = new Date()) {
   return `b_${d}_${crypto.randomBytes(2).toString('hex')}`;
 }
 
+// ---------- 选曲发散工具（24h 硬去重；norm 键跨写法匹配） ----------
+
+const normText = (s) => String(s || '').toLowerCase().replace(/\s+/g, '');
+const splitSpec = (spec) => {
+  const m = String(spec || '').match(/^(?<artist>.+?)\s-\s(?<title>.+)$/);
+  return { artist: m?.groups?.artist?.trim() || '', title: m?.groups?.title?.trim() || String(spec || '').trim() };
+};
+const pairKey = (artist, title) => `${normText(artist)}|${normText(title)}`;
+
 export class ComputeService {
   /** @param {object} deps { brain, music, tts, state, config, log, calendarText?, onBroadcast?, onControl?, onEvent? } */
   constructor(deps = {}) {
@@ -244,6 +253,29 @@ export class ComputeService {
       const usage = brainResult.raw.usage;
       say.text = action.say;
 
+      // ③.5 选曲发散：24h 内播过的歌硬过滤（用户亲口点名的豁免）；全滤光 → 个人红心曲库回填。
+      //     软约束（契约规则）靠大脑自觉，这里是兜底——LLM 不听话也进不了队列。
+      let repeatGuard = null;
+      if (Array.isArray(action.play) && action.play.length) {
+        const fr = this._filterRepeats(action.play, action.intros, intent.text || '');
+        if (fr.dropped.length) {
+          degraded.push('repeat_filtered');
+          this.log.info?.('24h 去重过滤', { dropped: fr.dropped, kept: fr.kept.length });
+        }
+        if (!fr.kept.length) {
+          const refill = this._redheartPool(2, fr.keys, fr.titles, fr.dropped);
+          if (refill.length) {
+            fr.kept = refill;
+            fr.intros = refill.map(() => null);   // 回填曲无口播，_scheduleIntroRepair 会补
+            degraded.push('repeat_refill_library');
+            this.log.info?.('大脑选曲全是近期播过 → 红心曲库回填', { refill });
+          }
+        }
+        action.play = fr.kept;
+        action.intros = fr.intros;
+        repeatGuard = { idFilter: fr.ids, exempt: fr.exempt };
+      }
+
       // ④ 并行：TTS(say) ‖ 音乐解析（首 2 首同步，其余后台补齐）
       this.deps.onEvent?.('state-change', { state: 'RESOLVING', bid });
       this.machine.tryTo('RESOLVING');
@@ -268,6 +300,7 @@ export class ComputeService {
       const { queue, fallbackAudio } = await this._resolveQueue(action.play || [], {
         onAppend: (t) => this.deps.onEvent?.('queue-update', { index: queue.length - 1, track: t }),
         degraded,
+        guard: repeatGuard,
       });
       // 口播音频附到对应曲目（intros 与 play 等长对齐；后台补齐曲目同样带口播）
       const intros = await Promise.all(introP);
@@ -451,12 +484,18 @@ export class ComputeService {
    * 曲目解析：首 SYNC_TRACKS 首同步（覆盖开播窗口），其余后台补齐经 WS 追加。
    * 全部同步解析失败 → 本地兜底音频。
    */
-  async _resolveQueue(play, { onAppend, degraded }) {
+  async _resolveQueue(play, { onAppend, degraded, guard = null }) {
     const queue = [];
     const fails = [];
     const tryOne = async (spec) => {
       try {
         const r = await this.deps.music.resolve(spec);
+        // 解析结果的曲目 id 命中 24h 播过集 → 换一种写法的重复，同样拦下（用户点名的豁免）
+        const rid = String(r.track.originalId ?? r.track.id ?? '');
+        if (guard?.idFilter && !guard.exempt?.has(String(spec)) && guard.idFilter.has(rid)) {
+          this.log.info?.('解析结果 24h 内播过，跳过', { spec, id: rid });
+          return 'skip';
+        }
         const t = this._trackEntry(r, spec, queue.length);
         queue.push(t);
         if (queue.length > SYNC_TRACKS) onAppend?.(t);
@@ -514,6 +553,65 @@ export class ComputeService {
       })();
     }
     return { queue, fallbackAudio };
+  }
+
+  /** 近 hours 小时播放记录 → 归一化键集（选曲硬去重用；norm 键跨「艺人写法/空格」差异匹配） */
+  _playedKeys24h(hours = 24) {
+    const rows = this.deps.state?.recentPlays?.(200) || [];
+    const keys = new Set(), titles = new Set(), ids = new Set();
+    const since = Date.now() - hours * 3600e3;
+    for (let i = rows.length - 1; i >= 0; i--) {          // recentPlays 旧→新，从新端往回扫
+      const p = rows[i];
+      if (!p || p.at_ms < since) break;
+      if (p.artist) keys.add(pairKey(p.artist, p.title));
+      titles.add(normText(p.title));
+      if (p.track_id) ids.add(String(p.track_id));
+    }
+    return { keys, titles, ids };
+  }
+
+  /**
+   * 24h 硬去重：近期播过的 spec 滤掉（用户本次文本里亲口点名的豁免）。
+   * intros 与 play 等长对齐地一起过滤；不修改入参。
+   */
+  _filterRepeats(play, intros = [], userText = '', extraDrops = []) {
+    const { keys, titles, ids } = this._playedKeys24h();
+    const said = normText(userText);
+    const kept = [], keptIntros = [], dropped = [], exempt = new Set();
+    (Array.isArray(play) ? play : []).forEach((spec, i) => {
+      const { artist, title } = splitSpec(spec);
+      const userNamed = title && said.includes(normText(title));
+      if (userNamed) exempt.add(String(spec));
+      if (userNamed) { /* 用户点名：留 */ } else if (
+        (extraDrops || []).includes(spec)
+        || keys.has(pairKey(artist, title))
+        || (!artist && titles.has(normText(title)))
+      ) { dropped.push(spec); return; }
+      kept.push(String(spec));
+      keptIntros.push(Array.isArray(intros) ? (intros[i] ?? null) : null);
+    });
+    return { kept, intros: keptIntros, dropped, ids, keys, titles, exempt };
+  }
+
+  /** 个人红心曲库（taste-imports）随机抽 n 首，排除已播键与指定规格 */
+  _redheartPool(n, excludeKeys = new Set(), excludeTitles = new Set(), excludeSpecs = []) {
+    const pool = [];
+    try {
+      const dir = path.join(this.cfg.root, 'knowledge', 'user', 'taste-imports');
+      for (const f of fs.readdirSync(dir).filter((x) => x.endsWith('.json'))) {
+        const j = JSON.parse(fs.readFileSync(path.join(dir, f), 'utf8'));
+        for (const t of j.tracks || []) {
+          const spec = `${t.artist} - ${t.title}`;
+          if ((excludeSpecs || []).includes(spec)) continue;
+          if (excludeKeys.has(pairKey(t.artist, t.title)) || excludeTitles.has(normText(t.title))) continue;
+          pool.push(spec);
+        }
+      }
+    } catch (e) {
+      this.log.debug?.('红心曲库不可用', { error: e.message });
+    }
+    for (let i = pool.length - 1; i > 0; i--) { const j = Math.floor(Math.random() * (i + 1)); [pool[i], pool[j]] = [pool[j], pool[i]]; }
+    return pool.slice(0, n);
   }
 
   /** 本地兜底音频池：data/fallback-audio/ 顺序轮换 */
@@ -587,12 +685,18 @@ export class ComputeService {
     }
   }
 
-  /** 漫游批次：① 大脑按画像探索（≥2 首歌单外）→ 失败 ② 个人红心曲库随机补 */
+  /** 漫游批次：① 大脑按画像探索（≥2 首歌单外）→ 失败 ② 个人红心曲库随机补。全程 24h 硬去重 */
   async _roamBatch(queueSpecs = [], recentSpecs = []) {
     this._lastRoamSource = 'library';
+    const pk = this._playedKeys24h();
     const avoid = [...new Set([...queueSpecs, ...recentSpecs])];
-    const avoidBlock = avoid.length
-      ? '\n\n【以下曲目已推送过或在队列，全部不要重复】\n' + avoid.join('\n')
+    // 服务端自查 24h 播过清单，喂给大脑当避重名单（不依赖客户端上报）
+    const dbRecent = (this.deps.state?.recentPlays?.(30) || [])
+      .filter((p) => Date.now() - p.at_ms < 24 * 3600e3)
+      .map((p) => `${p.artist} - ${p.title}`);
+    const avoidAll = [...new Set([...avoid, ...dbRecent])];
+    const avoidBlock = avoidAll.length
+      ? '\n\n【以下曲目已推送过或最近播过，全部不要重复】\n' + avoidAll.join('\n')
       : '';
     const intent = {
       id: `roam_${Date.now().toString(36)}`, name: 'freeform', lane: 'brain', needBrain: true,
@@ -605,6 +709,7 @@ export class ComputeService {
     const tryResolve = async (spec) => {
       const r = await this.deps.music.resolve(spec).catch(() => null);
       if (!r) return null;
+      if (pk.ids.has(String(r.track.originalId ?? r.track.id ?? ''))) return null;   // 24h 内播过
       const t = this._trackEntry(r, spec, tracks.length);
       // 封面后台补齐
       if (!t.coverUrl && t.picId) {
@@ -625,12 +730,15 @@ export class ComputeService {
         + '\n\n追加要求（无限漫游批次）：\n' + [
           'play 给 3 首，intros 逐首覆盖，say 给 15 字内的极简串场（不朗读）。',
           '至少 2 首是用户歌单里**没有**的同风格歌曲——按 TASTE_PROFILE 的流派权重探索相似艺人/相似气质的新歌，不要复读歌单。',
+          '同一位艺人最多 1 首；知名度一般的佳作优先于最著名的代表作。',
           '避开上面【已推送过】的曲目。',
         ].map((s) => '- ' + s).join('\n') + avoidBlock;
       const brainResult = await this.deps.brain.compute(prompt, {});
       const action = brainResult.action;
-      const specs = (action.play || []).slice(0, 3);
-      const introLines = Array.isArray(action.intros) ? action.intros : [];
+      // 大脑不听话也要拦：24h 播过 + 本批 avoid 一起硬过滤
+      const fr = this._filterRepeats((action.play || []).slice(0, 3), action.intros, '', avoidAll);
+      const specs = fr.kept;
+      const introLines = fr.intros;
       for (let i = 0; i < specs.length; i++) {
         const [r, intro] = await Promise.all([
           this.deps.music.resolve(specs[i]).catch(() => null),
@@ -640,6 +748,7 @@ export class ComputeService {
           : Promise.resolve(null),
         ]);
         if (!r) continue;
+        if (pk.ids.has(String(r.track.originalId ?? r.track.id ?? ''))) continue;   // 24h 内播过
         const t = this._trackEntry(r, specs[i], tracks.length);
         if (intro) t.intro = intro;
         tracks.push(t);
@@ -653,22 +762,13 @@ export class ComputeService {
       this.log.warn?.('漫游大脑批次失败 → 个人红心曲库', { error: e.message });
     }
 
-    // ② 个人红心曲库兜底：避开最近 24h 播过与本批已有的
+    // ② 个人红心曲库兜底：避开最近 24h 播过、本批 avoid 与已有曲目
     try {
-      const played = this.deps.state?.recentPlayedTrackIds?.(24) || new Set();
-      const dir = path.join(this.cfg.root, 'knowledge', 'user', 'taste-imports');
-      const pool = [];
-      for (const f of fs.readdirSync(dir).filter((x) => x.endsWith('.json'))) {
-        const j = JSON.parse(fs.readFileSync(path.join(dir, f), 'utf8'));
-        for (const t of j.tracks) {
-          const spec = `${t.artist} - ${t.title}`;
-          if (!played.has(String(t.id)) && !played.has(spec) && !tracks.some((x) => x.spec === spec)) pool.push(spec);
-        }
-      }
-      for (let i = pool.length - 1; i > 0; i--) { const j = Math.floor(Math.random() * (i + 1)); [pool[i], pool[j]] = [pool[j], pool[i]]; }
-      for (const spec of pool.slice(0, 3)) {
+      const pool = this._redheartPool(3, pk.keys, pk.titles, [...avoid, ...tracks.map((t) => t.spec)]);
+      for (const spec of pool) {
         const r = await this.deps.music.resolve(spec).catch(() => null);
         if (!r) continue;
+        if (pk.ids.has(String(r.track.originalId ?? r.track.id ?? ''))) continue;
         const t = this._trackEntry(r, spec, tracks.length);
         tracks.push(t);
       }

@@ -7,11 +7,14 @@ import assert from 'node:assert/strict';
 import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
+import crypto from 'node:crypto';
 import { ComputeService } from '../../src/layer2/compute.js';
 import { StateStore } from '../../src/layer2/state.js';
 import { FakeTtsAdapter } from '../../src/layer2/tts.js';
 
 const ROOT = path.resolve(import.meta.dirname, '..', '..');
+/** 与 makeDeps 音乐桩一致的派生 id（24h id 去重测试用） */
+const specId = (spec) => 'id_' + crypto.createHash('md5').update(String(spec)).digest('hex').slice(0, 10);
 
 function makeDeps({
   brainText = '{"say":"测试播报。","play":["李志 - 下雨"],"reason":"测试理由","segue":""}',
@@ -39,7 +42,7 @@ function makeDeps({
   const music = {
     resolve: async (spec) => {
       if (musicFail) throw Object.assign(new Error('无直链'), { code: 'E_NO_URL' });
-      return { url: 'https://cdn.example/x.mp3', br: 320, size: 1000, from: 'test', resolvedAt: Date.now(), expiresAt: Date.now() + 600000, track: { originalId: '186016', id: 'X1', source: 'netease', name: spec.split(' - ')[1] || spec, artist: [spec.split(' - ')[0] || '未知'], album: 'A', coverUrl: 'http://c', durationMs: 200000, playFlag: true }, score: 50 };
+      return { url: 'https://cdn.example/x.mp3', br: 320, size: 1000, from: 'test', resolvedAt: Date.now(), expiresAt: Date.now() + 600000, track: { originalId: specId(spec), id: specId(spec), source: 'netease', name: spec.split(' - ')[1] || spec, artist: [spec.split(' - ')[0] || '未知'], album: 'A', coverUrl: 'http://c', durationMs: 200000, playFlag: true }, score: 50 };
     },
     search: async () => [],
   };
@@ -125,3 +128,66 @@ test('单飞：并发 5 次点播串行执行（同一时刻只跑一个 compute
 function makeDeps0() {
   return { brainText: '{"say":"s","play":[],"reason":"r","segue":""}' };
 }
+
+// ---------- 选曲发散：24h 硬去重 ----------
+
+test('24h 去重：大脑推近期播过的歌被硬过滤（repeat_filtered），用户点名豁免', async () => {
+  const { svc, state } = makeCompute(makeDeps({
+    brainText: '{"say":"s","play":["李志 - 下雨","朴树 - 平凡之路"],"intros":["a","b"],"reason":"r","segue":""}',
+  }));
+  state.addPlay({ trackId: specId('李志 - 下雨'), source: 'netease', title: '下雨', artist: '李志', spec: '李志 - 下雨', atMs: Date.now() - 3600e3 });
+  const b = await svc.handleUserChat('随便放点');
+  assert.equal(b.queue.length, 1);
+  assert.equal(b.queue[0].spec, '朴树 - 平凡之路');
+  assert.ok(b.degradedReasons.includes('repeat_filtered'), JSON.stringify(b.degradedReasons));
+
+  // 用户亲口点名 → 豁免硬过滤
+  const b2 = await svc.handleUserChat('再放一遍李志的下雨');
+  assert.ok(b2.queue.some((t) => t.spec === '李志 - 下雨'), '用户点名应豁免');
+});
+
+test('24h 去重（解析后 id 命中）：换个写法的同一首也拦下', async () => {
+  const { svc, state } = makeCompute(makeDeps({
+    brainText: '{"say":"s","play":["李志 - 下雨 (Live)"],"reason":"r","segue":""}',
+  }));
+  // 库里记录的是旧写法「李志 - 下雨」，但 track_id 等于新写法解析出的 id
+  state.addPlay({ trackId: specId('李志 - 下雨 (Live)'), source: 'netease', title: '下雨', artist: '李志', spec: '李志 - 下雨', atMs: Date.now() - 1800e3 });
+  const b = await svc.handleUserChat('随便放点');
+  assert.equal(b.queue.length, 0, '换写法的重复不应进队列');
+});
+
+test('大脑全在炒冷饭 → 个人红心曲库回填（repeat_refill_library）', async () => {
+  const root = fs.mkdtempSync(path.join(os.tmpdir(), 'claudiao-dedup-'));
+  fs.mkdirSync(path.join(root, 'knowledge', 'user', 'taste-imports'), { recursive: true });
+  fs.writeFileSync(path.join(root, 'knowledge', 'user', 'taste-imports', 'pl.json'),
+    JSON.stringify({ tracks: [{ id: '9001', artist: '万青', title: '秦皇岛' }, { id: '9002', artist: '崔健', title: '花房姑娘' }] }));
+  const deps = makeDeps({ brainText: '{"say":"s","play":["李志 - 下雨"],"reason":"r","segue":""}' });
+  deps.cfg.root = root;
+  const { svc, state } = makeCompute(deps);
+  state.addPlay({ trackId: specId('李志 - 下雨'), source: 'netease', title: '下雨', artist: '李志', spec: '李志 - 下雨', atMs: Date.now() - 1800e3 });
+  const b = await svc.handleUserChat('随便放点');
+  assert.ok(b.degradedReasons.includes('repeat_refill_library'), JSON.stringify(b.degradedReasons));
+  const specs = b.queue.map((t) => t.spec).sort();
+  assert.deepEqual(specs, ['万青 - 秦皇岛', '崔健 - 花房姑娘']);
+});
+
+test('漫游：大脑批次经 24h 硬去重，红心兜底同样避重', async () => {
+  const root = fs.mkdtempSync(path.join(os.tmpdir(), 'claudiao-roam-'));
+  fs.mkdirSync(path.join(root, 'knowledge', 'user', 'taste-imports'), { recursive: true });
+  fs.writeFileSync(path.join(root, 'knowledge', 'user', 'taste-imports', 'pl.json'),
+    JSON.stringify({ tracks: [{ id: '9003', artist: '罗大佑', title: '光阴的故事' }] }));
+  const deps = makeDeps({
+    brainText: '{"say":"s","play":["李志 - 下雨","朴树 - 平凡之路"],"intros":["a","b"],"reason":"r","segue":""}',
+  });
+  deps.cfg.root = root;
+  const { svc, state } = makeCompute(deps);
+  // 两首都在 24h 内播过 → 大脑批次应被滤光 → 红心兜底给光阴的故事
+  state.addPlay({ trackId: specId('李志 - 下雨'), source: 'netease', title: '下雨', artist: '李志', spec: '李志 - 下雨', atMs: Date.now() - 1800e3 });
+  state.addPlay({ trackId: specId('朴树 - 平凡之路'), source: 'netease', title: '平凡之路', artist: '朴树', spec: '朴树 - 平凡之路', atMs: Date.now() - 3600e3 });
+  svc.roaming.enabled = true;
+  const r = await svc.roamNext({ queueSpecs: [] });
+  assert.ok(r.queued);
+  assert.equal(r.tracks.length, 1);
+  assert.equal(r.tracks[0].spec, '罗大佑 - 光阴的故事');
+  assert.equal(r.source, 'library');
+});
