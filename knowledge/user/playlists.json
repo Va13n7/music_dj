@@ -1,0 +1,240 @@
+{
+  "$schema_version": "1.0",
+  "$description": "Claudiao 电台曲目池。施工图第一层 USER/ 的 playlists.json，被 context.js 第 ② 片读取，用于按时段/情绪兜底选曲。所有曲目格式必须为 '艺人 - 曲名'（空格+半角连字符+空格），与 DjAction.play[] 元素格式一致。",
+  "$usage": "context.js 按 slot 或 mood 取对应歌单的前若干首作为候选，并剔除最近 24 小时已播曲目（见 src/layer2/state.js 的 recentPlays）。",
+  "version": 1,
+  "updated": "2026-10-15",
+  "config": {
+    "maxTracksPerBroadcast": 5,
+    "avoidRecentHours": 24,
+    "preferUnplayedRatio": 0.7,
+    "sourceHint": "netease"
+  },
+  "playlists": [
+    {
+      "id": "morning-bright",
+      "name": "早间清醒",
+      "slots": ["morning", "commute"],
+      "moods": ["happy", "energize"],
+      "energy": 6,
+      "description": "明亮、有推进力，适合刚醒到出门这一段。不喊口号，只给人往前走的力气。",
+      "tracks": [
+        "朴树 - 生如夏花",
+        "朴树 - 平凡之路",
+        "五月天 - 温柔",
+        "陈绮贞 - 旅行的意义",
+        "苏打绿 - 小情歌",
+        "万能青年旅店 - 不万能的喜剧",
+        "新裤子 - 没有理想的人不伤心",
+        "宋冬野 - 董小姐"
+      ]
+    },
+    {
+      "id": "commute-drive",
+      "name": "通勤与公路",
+      "slots": ["commute"],
+      "moods": ["commute", "energize"],
+      "energy": 7,
+      "description": "有公路感、节奏稳定。适合走路、坐车、开车，不催眠也不吵。",
+      "tracks": [
+        "万能青年旅店 - 杀死那个石家庄人",
+        "痛仰 - 公路之歌",
+        "逃跑计划 - 夜空中最亮的星",
+        "GALA - 追梦赤子心",
+        "汪峰 - 春天里",
+        "郑钧 - 回到拉萨"
+      ]
+    },
+    {
+      "id": "focus-deep",
+      "name": "专注深潜",
+      "slots": ["work_am", "work_pm"],
+      "moods": ["focus"],
+      "energy": 4,
+      "description": "结构稳定、不突变、无人声或外语优先。这一档绝不能被播报打断。",
+      "tracks": [
+        "Mogwai - Take Me Somewhere Nice",
+        "Explosions in the Sky - Your Hand in Mine",
+        "This Will Destroy You - The Mighty Rio Grande",
+        "Sigur Rós - Hoppípolla",
+        "Ólafur Arnalds - Near Light",
+        "Nils Frahm - Says",
+        "坂本龍一 - Merry Christmas Mr. Lawrence",
+        "Brian Eno - An Ending (Ascent)"
+      ]
+    },
+    {
+      "id": "afternoon-lift",
+      "name": "午后提神",
+      "slots": ["noon", "afternoon_low"],
+      "moods": ["energize", "happy"],
+      "energy": 6,
+      "description": "午后低潮用。提一点能量但不炸，允许一句调侃。",
+      "tracks": [
+        "新裤子 - 你要跳舞吗",
+        "刺猬 - 火车驶向云外，梦安魂于九霄",
+        "五条人 - 道山靓仔",
+        "陈粒 - 历历万乡",
+        "旅行团 - 永远都会在"
+      ]
+    },
+    {
+      "id": "evening-relax",
+      "name": "傍晚松弛",
+      "slots": ["evening"],
+      "moods": ["evening", "happy"],
+      "energy": 4,
+      "description": "从工作模式切回生活。City Pop、爵士、Bossa Nova 为主。",
+      "tracks": [
+        "竹内まりや - Plastic Love",
+        "山下达郎 - Ride On Time",
+        "大貫妙子 - 4:00A.M.",
+        "João Gilberto - Corcovado",
+        "Norah Jones - Don't Know Why",
+        "李泉 - 走钢索的人"
+      ]
+    },
+    {
+      "id": "night-private",
+      "name": "夜间私人",
+      "slots": ["night"],
+      "moods": ["late_night", "calm"],
+      "energy": 2,
+      "description": "最放松、最私人。可以放冷门、可以放长专辑。不说废话。",
+      "tracks": [
+        "李志 - 关于郑州的记忆",
+        "李志 - 山阴路的夏天",
+        "万能青年旅店 - 秦皇岛",
+        "陈粒 - 小半",
+        "尧十三 - 瞎子",
+        "钟立风 - 今天是你的生日，妈妈",
+        "朴树 - 且听风吟"
+      ]
+    },
+    {
+      "id": "rainy-day",
+      "name": "雨天",
+      "slots": ["any"],
+      "moods": ["rainy", "calm"],
+      "energy": 3,
+      "description": "慢速民谣、钢琴、带雨感的氛围。承认天气，不抒情。",
+      "tracks": [
+        "李志 - 下雨",
+        "陈粒 - 小半",
+        "程璧 - 我想和你虚度时光",
+        "好妹妹 - 一个人的北京",
+        "Ólafur Arnalds - Near Light",
+        "坂本龍一 - Aqua"
+      ]
+    },
+    {
+      "id": "low-company",
+      "name": "低落时的陪伴",
+      "slots": ["any"],
+      "moods": ["low", "anxious", "tired"],
+      "energy": 3,
+      "description": "一起丧，不劝解、不打鸡血。提供被理解感而非解决方案。",
+      "tracks": [
+        "万能青年旅店 - 杀死那个石家庄人",
+        "李志 - 梵高先生",
+        "尧十三 - 他妈的",
+        "腰乐队 - 一个短篇",
+        "宋冬野 - 莉莉安",
+        "陈粒 - 奇妙能力歌"
+      ]
+    },
+    {
+      "id": "wind-down",
+      "name": "睡前降落",
+      "slots": ["night_wind_down"],
+      "moods": ["calm", "tired", "late_night"],
+      "energy": 1,
+      "description": "睡前最后半小时。能量不得高于 3，不说废话，逐渐淡出。",
+      "tracks": [
+        "Ólafur Arnalds - Near Light",
+        "Nils Frahm - Says",
+        "坂本龍一 - Solitude",
+        "Brian Eno - An Ending (Ascent)",
+        "Max Richter - On the Nature of Daylight",
+        "程璧 - 我想和你虚度时光"
+      ]
+    },
+    {
+      "id": "celebrate",
+      "name": "庆祝",
+      "slots": ["any"],
+      "moods": ["celebrate", "happy"],
+      "energy": 8,
+      "description": "完成了一件事的时候。真诚祝贺一句，然后放开听。",
+      "tracks": [
+        "Queen - Don't Stop Me Now",
+        "Earth, Wind & Fire - September",
+        "Daft Punk - Get Lucky",
+        "新裤子 - 你要跳舞吗",
+        "Mark Ronson - Uptown Funk"
+      ]
+    },
+    {
+      "id": "nostalgia",
+      "name": "怀旧",
+      "slots": ["any"],
+      "moods": ["nostalgic"],
+      "energy": 4,
+      "description": "想起以前的时候。允许一点感伤，但不沉溺。",
+      "tracks": [
+        "张国荣 - 风继续吹",
+        "Beyond - 海阔天空",
+        "王菲 - 红豆",
+        "陈奕迅 - 好久不见",
+        "罗大佑 - 鹿港小镇",
+        "邓丽君 - 我只在乎你",
+        "老狼 - 同桌的你"
+      ]
+    }
+  ],
+  "fallbackPool": {
+    "$description": "当所有歌单都不匹配、或音乐检索全部失败时的保底池。电台永远不能静音（设计总览 §5.2）。",
+    "tracks": [
+      "朴树 - 生如夏花",
+      "李志 - 下雨",
+      "陈粒 - 小半",
+      "万能青年旅店 - 秦皇岛",
+      "张国荣 - 风继续吹",
+      "Ólafur Arnalds - Near Light",
+      "新裤子 - 没有理想的人不伤心",
+      "程璧 - 我想和你虚度时光"
+    ],
+    "selectionPolicy": "随机取一首，且必须不在最近 6 小时已播列表内"
+  },
+  "slotDefaults": {
+    "$description": "每个调度 slot 默认绑定的歌单 id。scheduler.js 触发时用它兜底，context.js 用它给大脑提示。",
+    "daily_plan": "morning-bright",
+    "morning": "morning-bright",
+    "commute": "commute-drive",
+    "work_am": "focus-deep",
+    "noon": "afternoon-lift",
+    "afternoon_low": "afternoon-lift",
+    "work_pm": "focus-deep",
+    "evening": "evening-relax",
+    "night": "night-private",
+    "night_wind_down": "wind-down",
+    "hourly_check": "fallbackPool"
+  },
+  "moodDefaults": {
+    "$description": "情绪档位 → 默认歌单 id 的映射，与 mood-rules.md 的档位 ID 一一对应。",
+    "calm": "rainy-day",
+    "rainy": "rainy-day",
+    "focus": "focus-deep",
+    "low": "low-company",
+    "anxious": "low-company",
+    "tired": "wind-down",
+    "happy": "celebrate",
+    "energize": "afternoon-lift",
+    "commute": "commute-drive",
+    "evening": "evening-relax",
+    "late_night": "night-private",
+    "nostalgic": "nostalgia",
+    "celebrate": "celebrate",
+    "random": "fallbackPool"
+  }
+}
