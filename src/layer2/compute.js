@@ -164,6 +164,38 @@ export class ComputeService {
 
   _kd() { return path.join(this.cfg.root, 'knowledge'); }
 
+  /**
+   * 节目名：按「星期几 + 时段」从诗性池子里抽一个（如 "Friday Late Night Exhale"），
+   * 给每次播报一个电台节目的身份。en/zh 跟随 DJ_LANG。
+   */
+  _programName(intent = {}) {
+    const now = new Date();
+    const h = now.getHours();
+    const slot = h < 5 ? 'late' : h < 11 ? 'morning' : h < 14 ? 'midday' : h < 18 ? 'afternoon' : h < 22 ? 'evening' : 'late';
+    const en = {
+      morning: ['Slow Start', 'First Light', 'Wake-up Set', 'Fresh Air'],
+      midday: ['Midday Drift', 'Noon Pause', 'Lunch FM'],
+      afternoon: ['Deep Focus', 'Long Play', 'Afternoon Static'],
+      evening: ['Evening Exhale', 'Golden Hour', 'Wind-down'],
+      late: ['Late Night Exhale', 'Midnight Radio', 'Night Swim', 'After Hours'],
+    };
+    const zh = {
+      morning: ['清晨序曲', '慢启动', '晨间电台'],
+      midday: ['午间漫步', '正午片刻'],
+      afternoon: ['深度工作', '午后长播', '下午静态'],
+      evening: ['黄昏出气口', '金色时刻', '晚间慢车'],
+      late: ['深夜呼气', '午夜电台', '夜泳', '下班以后'],
+    };
+    const pool = (this.cfg.djLang === 'en' ? en : zh)[slot];
+    const pick = pool[Math.floor(Math.random() * pool.length)];
+    if (this.cfg.djLang === 'en') {
+      const wd = ['Sunday', 'Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday'][now.getDay()];
+      return { name: `${wd} ${pick}`, slot };
+    }
+    const wd = ['周日', '周一', '周二', '周三', '周四', '周五', '周六'][now.getDay()];
+    return { name: `${wd} · ${pick}`, slot };
+  }
+
   // ---------- 单飞 + 优先级队列 ----------
 
   _enqueue(intent, priority) {
@@ -348,6 +380,7 @@ export class ComputeService {
       const broadcast = {
         id: bid,
         sessionId: brainResult.raw.sessionId,
+        program: this._programName(intent),
         intent: {
           name: intent.name, lane: intent.lane, source: intent.source, priority: intent.priority,
           text: intent.text || '', mood: intent.slots?.mood ?? null,
@@ -430,6 +463,7 @@ export class ComputeService {
       const state = say.skipped ? 'MUSIC_ONLY' : 'SPEAKING';
       const broadcast = {
         id: bid, sessionId: null,
+        program: this._programName(intent),
         intent: { name: 'play_request', lane: 'music', source: intent.source, priority: intent.priority,
           text: intent.text || '', mood: null, moodCandidates: [], slot: null,
           confidence: intent.confidence, reason: intent.reason || '' },

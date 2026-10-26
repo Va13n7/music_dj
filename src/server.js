@@ -71,6 +71,35 @@ export function createServer(deps = {}) {
     }
   });
 
+  // ---------- GET /api/dj · DJ 主页卡片 ----------
+  app.get('/api/dj', (req, res) => {
+    let genres = null;
+    try {
+      const f = path.join(config.root, 'knowledge', 'user', 'dj-card.json');
+      const j = JSON.parse(fs.readFileSync(f, 'utf8'));
+      if (Array.isArray(j.genres)) genres = j.genres.map(String).slice(0, 12);
+    } catch { /* 无自定义卡片用默认 */ }
+    res.json({
+      name: 'Valen',
+      tagline: '你的专属私人 DJ · 一开机就打碟',
+      bio: ['Your mood is my prompt.', 'I hate algorithm. I have taste.'],
+      genres: genres || ['JAZZ-HIPHOP', 'CITY-POP', '90S华语', 'POST-ROCK', 'SHIBUYA-KEI', '下雨白噪音'],
+      onAir: true,
+      uptimeS: Math.floor(process.uptime()),
+    });
+  });
+
+  // ---------- POST /api/feedback · 收藏/取消收藏当前曲目 ----------
+  app.post('/api/feedback', requireAuth, (req, res) => {
+    const bid = String(req.body?.broadcastId || '');
+    if (!bid) return res.status(400).json({ error: 'E_BAD_REQUEST', message: 'broadcastId 必填' });
+    const fb = req.body?.feedback === 1 || req.body?.feedback === true ? 1 : 0;
+    const row = state?.findPlayByBroadcast?.(bid);
+    if (!row) return res.status(404).json({ error: 'E_NOT_FOUND', message: '该播报没有播放记录' });
+    state.setPlayFeedback(row.id, fb);
+    res.json({ ok: true, id: row.id, feedback: fb });
+  });
+
   // ---------- GET /api/now ----------
   app.get('/api/now', (req, res) => {
     const b = compute.nowPlaying();

@@ -269,6 +269,13 @@ export class StateStore {
     ).all(`%${q}%`, `%${q}%`, limit);
   }
 
+  /** 按播报 ID 找最近一条播放行（收藏/反馈落点） */
+  findPlayByBroadcast(broadcastId) {
+    return this.db.prepare(
+      'SELECT id, title, artist, feedback FROM plays WHERE broadcast_id = ? ORDER BY at_ms DESC LIMIT 1',
+    ).get(String(broadcastId)) || null;
+  }
+
   // ---------- plan（M0/M4 最小集：M6 扩展 claim/stale 逻辑）----------
 
   upsertPlanRow({ date, slot, status = 'pending', scheduledAt, trigger = null, intent = null }) {

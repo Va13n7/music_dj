@@ -1,6 +1,6 @@
 /* Claudiao PWA Service Worker：壳层离线缓存（网络优先，缓存兜底） */
-const CACHE = 'claudiao-v1';
-const SHELL = ['/', '/index.html', '/app.js', '/manifest.webmanifest'];
+const CACHE = 'claudiao-v2';
+const SHELL = ['/', '/index.html', '/app.js', '/style.css', '/manifest.webmanifest'];
 
 self.addEventListener('install', (e) => {
   e.waitUntil(caches.open(CACHE).then((c) => c.addAll(SHELL)).then(() => self.skipWaiting()));
