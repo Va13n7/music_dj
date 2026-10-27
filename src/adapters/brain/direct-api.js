@@ -58,13 +58,15 @@ export async function listProviderModels({ provider, apiKey, baseUrl } = {}) {
 
 export class DirectApiBrainAdapter {
   /**
-   * @param {object} opts { apiKey, model, baseUrl, protocol?('anthropic'|'openai'), thinking?(bool), timeoutMs?, log? }
-   *   baseUrl 未传时默认 BigModel（历史兼容）——调用方应显式传供应商的 baseUrl。
+   * @param {object} opts { apiKey, model, baseUrl, protocol?('anthropic'|'openai'), provider?, thinking?, timeoutMs?, log? }
+   *   baseUrl 未传时按 provider 目录解析；thinking 不传时按 provider 默认。
    */
-  constructor({ apiKey, model, baseUrl, protocol = 'anthropic', thinking, timeoutMs, log } = {}) {
-    this.protocol = protocol;
-    this.baseUrl = (baseUrl || 'https://open.bigmodel.cn/api/anthropic').replace(/\/+$/, '');
-    this.thinking = thinking ?? false;
+  constructor({ apiKey, model, baseUrl, protocol = 'anthropic', provider = '', thinking, timeoutMs, log } = {}) {
+    const preset = BRAIN_PROVIDERS.find((p) => p.id === provider);
+    this.provider = provider || '';
+    this.protocol = protocol || preset?.protocol || 'anthropic';
+    this.baseUrl = (baseUrl || preset?.baseUrl || 'https://open.bigmodel.cn/api/anthropic').replace(/\/+$/, '');
+    this.thinking = thinking ?? (this.provider === 'bigmodel');   // BigModel 默认压到 low 档
     this.apiKey = apiKey;
     this.modelId = model || 'GLM-5-Turbo';
     this.timeoutMs = timeoutMs || 60000;
@@ -82,11 +84,13 @@ export class DirectApiBrainAdapter {
   rotate() { /* 无状态协议，无会话可轮换 */ }
   close() { /* 无子进程资源 */ }
 
-  /** 思考档：仅 BigModel anthropic 端点传（GLM-5.3 系强制思考，low 档最快） */
-  _thinkingParam() {
-    if (!this.thinking) return undefined;
-    if (/turbo|flashx|air/i.test(this.modelId)) return undefined;
-    return { thinking: { type: 'enabled', level: 'low' } };
+  /** 速度参数：按供应商把"思考强度"压到最快可用档（电台场景优先响应速度） */
+  _fastParams() {
+    if (this.provider === 'bigmodel' && !/turbo|flashx|air/i.test(this.modelId)) {
+      return { thinking: { type: 'enabled', level: 'low' } };              // GLM-5.3 系强制思考，low 最快
+    }
+    if (this.provider === 'deepseek') return { effort: 'low' };           // V4 系默认 high，>120s；low 实测 ~8s
+    return {};
   }
 
   async _post(url, headers, body, timeoutMs) {
@@ -145,7 +149,7 @@ export class DirectApiBrainAdapter {
         model: this.modelId,
         max_tokens: 2000,
         messages: [{ role: 'user', content }],
-        ...this._thinkingParam(),
+        ...this._fastParams(),
       }, timeoutMs);
     }
 

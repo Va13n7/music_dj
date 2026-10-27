@@ -159,7 +159,14 @@ main { flex: 1; width: 100%; max-width: 600px; margin: 0 auto; padding: 18px 14p
 }
 .pill:hover { color: var(--fg); border-color: var(--fg); }
 .pill.on, .pill.active { color: var(--green); border-color: var(--green); }
-.wave-mini { display: block; width: 100%; height: 26px; opacity: 0.75; }
+.lyr-ticker {
+  min-height: 28px; display: flex; align-items: center; justify-content: center;
+  font-size: 16px; font-weight: 600; color: var(--fg);
+  white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
+  margin-bottom: 2px;
+}
+.lyr-ticker.tick { animation: lyricIn 0.35s ease-out; }
+@keyframes lyricIn { from { opacity: 0; transform: translateY(7px); } }
 .say { margin-top: 10px; font-style: italic; color: var(--dim); }
 .reason { margin-top: 8px; font-size: 12px; color: var(--dim); }
 
@@ -201,10 +208,10 @@ main { flex: 1; width: 100%; max-width: 600px; margin: 0 auto; padding: 18px 14p
 
 /* ---------- 队列 ---------- */
 #queueList { list-style: none; display: flex; flex-direction: column; max-height: 226px; overflow-y: auto; }
-#queueList, .transcript, .chatlog, #lyricsBox { scrollbar-width: thin; scrollbar-color: var(--line2) transparent; }
-#queueList::-webkit-scrollbar, .transcript::-webkit-scrollbar, .chatlog::-webkit-scrollbar, #lyricsBox::-webkit-scrollbar { width: 6px; }
-#queueList::-webkit-scrollbar-thumb, .transcript::-webkit-scrollbar-thumb, .chatlog::-webkit-scrollbar-thumb, #lyricsBox::-webkit-scrollbar-thumb { background: var(--line2); border-radius: 3px; }
-#queueList::-webkit-scrollbar-track, .transcript::-webkit-scrollbar-track, .chatlog::-webkit-scrollbar-track, #lyricsBox::-webkit-scrollbar-track { background: transparent; }
+#queueList, .transcript, .chatlog { scrollbar-width: thin; scrollbar-color: var(--line2) transparent; }
+#queueList::-webkit-scrollbar, .transcript::-webkit-scrollbar, .chatlog::-webkit-scrollbar { width: 6px; }
+#queueList::-webkit-scrollbar-thumb, .transcript::-webkit-scrollbar-thumb, .chatlog::-webkit-scrollbar-thumb { background: var(--line2); border-radius: 3px; }
+#queueList::-webkit-scrollbar-track, .transcript::-webkit-scrollbar-track, .chatlog::-webkit-scrollbar-track { background: transparent; }
 .qitem {
   display: flex; align-items: center; gap: 12px;
   padding: 9px 10px; border-radius: 10px; cursor: pointer;
@@ -221,10 +228,6 @@ main { flex: 1; width: 100%; max-width: 600px; margin: 0 auto; padding: 18px 14p
 .queue-empty { color: var(--dim2); font-size: 13px; padding: 4px 10px; }
 
 /* ---------- 歌词 ---------- */
-#lyricsBox { height: 180px; overflow-y: auto; display: flex; flex-direction: column; justify-content: center; text-align: center; gap: 2px; }
-.lyr-slot { color: var(--dim); padding: 1px 0; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; font-size: 13px; transition: color 0.3s, opacity 0.3s; opacity: 0.55; }
-.lyr-slot.active { color: var(--green); font-weight: 600; font-size: 15px; opacity: 1; }
-#lyricsBox.plain { white-space: pre-wrap; color: var(--fg); }
 
 /* ---------- 聊天 ---------- */
 .chat-card { padding-bottom: 12px; }
@@ -349,15 +352,16 @@ nav button.active { color: var(--fg); font-weight: 600; }
     grid-template-areas:
       "clock now       chat"
       "queue transcript chat"
-      "lyrics transcript chat";
+      "queue transcript chat";
     gap: 14px;
     align-items: stretch;
   }
   #view-player.active > * { margin-bottom: 0; }
 
-  .clock-hero { grid-area: clock; padding: 4px 0; }
-  .clock-hero canvas { height: 96px; width: auto; max-width: 100%; }
-  .clock-meta { margin-top: 6px; }
+  .clock-hero { grid-area: clock; padding: 2px 0 0; }
+  .clock-hero canvas { height: 64px; width: auto; max-width: 100%; }
+  .clock-meta { margin-top: 4px; font-size: 10px; }
+  .onair { margin-top: 4px; }
 
   .now-card { grid-area: now; min-height: 0; overflow: hidden; }
   .wave-hero { height: 64px; }
@@ -367,14 +371,11 @@ nav button.active { color: var(--fg); font-weight: 600; }
   .trackline { margin-bottom: 8px; }
   .progress-row { margin-bottom: 8px; }
   .transport { margin-bottom: 8px; }
-  .wave-mini { height: 20px; }
   .say, .reason { display: none; }   /* 桌面上这些信息在字幕与聊天里都有，省高度 */
 
   .queue-card { grid-area: queue; display: flex; flex-direction: column; min-height: 0; }
   #queueList { flex: 1; min-height: 0; overflow-y: auto; max-height: none; }
 
-  .lyrics-card { grid-area: lyrics; }
-  #lyricsBox { height: 110px; }
 
   .transcript-card { grid-area: transcript; display: flex; flex-direction: column; min-height: 0; }
   .transcript { flex: 1; min-height: 0; max-height: none; }

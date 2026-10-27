@@ -99,7 +99,7 @@ export function createServer(deps = {}) {
     return new DirectApiBrainAdapter({
       apiKey: cfg.apiKey, model: cfg.model,
       baseUrl: cfg.baseUrl || preset?.baseUrl || undefined,
-      protocol: preset?.protocol || 'anthropic', thinking: Boolean(cfg.thinking),
+      provider: cfg.provider, thinking: cfg.thinking,
       timeoutMs: config.brain.timeoutMs, log,
     });
   };

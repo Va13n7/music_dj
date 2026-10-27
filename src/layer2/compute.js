@@ -306,6 +306,21 @@ export class ComputeService {
         action.play = fr.kept;
         action.intros = fr.intros;
         repeatGuard = { idFilter: fr.ids, exempt: fr.exempt };
+        // 契约「同一位艺人本批最多 1 首」的硬执行版：模型贪多同艺人时只保留首见
+        const seenArtists = new Set();
+        const varied = [];
+        for (const spec of action.play) {
+          const { artist } = splitSpec(spec);
+          const key = normText(artist);
+          if (key && seenArtists.has(key)) continue;
+          if (key) seenArtists.add(key);
+          varied.push(spec);
+        }
+        if (varied.length !== action.play.length) {
+          this.log.info?.('同艺人去重', { before: action.play.length, after: varied.length });
+          action.play = varied;
+          action.intros = varied.map((_, i) => action.intros[i] ?? null);
+        }
       }
 
       // ④ 并行：TTS(say) ‖ 音乐解析（首 2 首同步，其余后台补齐）

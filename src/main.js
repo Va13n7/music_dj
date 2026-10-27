@@ -52,7 +52,7 @@ const brainAdapter = brainPref?.apiKey
       apiKey: String(brainPref.apiKey),
       model: brainPref.model || config.brain.model,
       baseUrl: brainPref.baseUrl || brainPreset?.baseUrl || undefined,
-      protocol: brainPreset?.protocol || 'anthropic',
+      provider: brainPref.provider,
       thinking: brainPref.thinking,
       timeoutMs: config.brain.timeoutMs,
       log,
@@ -62,6 +62,7 @@ const brainAdapter = brainPref?.apiKey
         apiKey: envKey,
         model: config.brain.model,
         baseUrl: dotEnv.BIGMODEL_API_BASE,
+        provider: 'bigmodel',
         timeoutMs: config.brain.timeoutMs,
         log,
       })

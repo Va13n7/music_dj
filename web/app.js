@@ -170,39 +170,10 @@
     }
     ctx.globalAlpha = 1;
   }
-  /** 音乐迷你波形：程序化节拍律动——~112BPM 脉冲 + 每拍换频谱形状 + 缓慢乐段强弱 */
-  function drawMusicWave(cv, live, bars) {
-    if (!cv) return;
-    if (cv.width !== cv.clientWidth || cv.height !== cv.clientHeight) { cv.width = cv.clientWidth; cv.height = cv.clientHeight; }
-    const ctx = cv.getContext('2d');
-    ctx.clearRect(0, 0, cv.width, cv.height);
-    const col = _waveCol || (_waveCol = themeVar('--wave', '#d9d5ee'));
-    const bw = cv.width / bars;
-    const t = performance.now() / 1000;
-    const bpm = 112;
-    const beatIdx = Math.floor(t * bpm / 60);
-    const beat = (t * bpm / 60) % 1;
-    const pulse = Math.pow(1 - beat, 2.4);                                          // 每拍起冲后衰减
-    const section = 0.62 + 0.38 * Math.sin(t * 0.21) * Math.sin(t * 0.083 + 1.7);   // 缓慢乐段强弱
-    for (let i = 0; i < bars; i++) {
-      let v;
-      if (live) {
-        const shape = 0.45 + 0.55 * Math.abs(Math.sin(i * 0.5 + beatIdx * 2.399));  // 每拍换"频谱形状"
-        v = Math.min(1, (0.16 + 0.62 * pulse) * shape * section + Math.random() * 0.07);
-      } else {
-        v = 0.03 + Math.random() * 0.035;
-      }
-      const h = Math.max(2, v * cv.height * 0.92);
-      ctx.fillStyle = col;
-      ctx.globalAlpha = live ? 0.34 + v * 0.6 : 0.16;
-      ctx.fillRect(i * bw + bw * 0.26, cv.height / 2 - h / 2, bw * 0.48, h);
-    }
-    ctx.globalAlpha = 1;
-  }
+  /** 音乐迷你律动已按需求撤销（2026-10-27）：该位置改为单行歌词字幕 */
   (function waveLoop() {
     requestAnimationFrame(waveLoop);
     drawSpectrum($('waveVoice'), voiceAn, !voiceA.paused && !!voiceA.src && !voiceA.src.startsWith('data:'), 56, 2.4);
-    drawMusicWave($('waveMusic'), !audio.paused && !!audio.src && audio.src.startsWith('http'), 64);
   })();
 
   // ---------- DJ 实时字幕：逐词卡拉OK（句子级时间轴 + 词级高亮，对齐人声 currentTime） ----------
@@ -502,74 +473,47 @@
     playCurrentIndex();
   }
 
-  // ---------- 歌词：LRC 解析 + 三行滚动 ----------
-  let lyricsTimer = null, lyricsLines = [];
-  $('btnLyricsToggle').addEventListener('click', () => {
-    const card = $('lyricsCard');
-    card.hidden = !card.hidden;
-    $('btnLyricsToggle').classList.toggle('on', !card.hidden);
-  });
-
+  // ---------- 歌词：LRC 解析 → 单行实时字幕（200ms 轮询 + 0.35s 提前量抗延迟） ----------
+  let lyricTimer = null, lyricTimes = [], lyricTexts = [], lyricIdx = -1;
+  function stopLyricTicker() { if (lyricTimer) { clearInterval(lyricTimer); lyricTimer = null; } }
   async function loadLyrics(t) {
-    clearInterval(lyricsTimer); lyricsLines = [];
-    const box = $('lyricsBox');
-    const card = $('lyricsCard'); card.hidden = false; $('btnLyricsToggle').classList.add('on');
-    box.className = ''; box.innerHTML = '<div class="reason">歌词加载中…</div>';
+    stopLyricTicker();
+    lyricTimes = []; lyricTexts = []; lyricIdx = -1;
+    const el = $('lyricsTicker');
+    el.hidden = true; el.classList.remove('tick'); el.textContent = '';
     try {
       const q = new URLSearchParams({ encryptedId: t.encryptedId || '', lyricId: t.lyricId || '', id: t.id || '' });
       const r = await fetch('/api/lyric?' + q);
       const j = await r.json();
       const lrc = j.lrc || '';
-      if (!lrc.trim()) { box.innerHTML = '<div class="reason">（这首歌暂时没有歌词）</div>'; return; }
-      const times = [], texts = [];
       for (const line of lrc.split(/\r?\n/)) {
         const m = line.match(/^\[(\d{1,2}):(\d{2})(?:[.:](\d{1,3}))?\](.*)$/);
         if (m && m[4].trim()) {
-          times.push(Number(m[1]) * 60 + Number(m[2]) + (m[3] ? Number('0.' + m[3]) : 0));
-          texts.push(m[4].trim());
-        } else if (line.trim() && !/^\[ar:|^\[ti:|^\[al:|^\[by:|^\[offset/i.test(line)) {
-          texts.push(line.trim()); times.push(null);
+          lyricTimes.push(Number(m[1]) * 60 + Number(m[2]) + (m[3] ? Number('0.' + m[3]) : 0));
+          lyricTexts.push(m[4].trim());
         }
       }
-      if (!texts.length) { box.innerHTML = '<div class="reason">（暂无歌词）</div>'; return; }
-      const timed = times[0] !== null;
-      box.className = timed ? '' : 'plain';
-      const slots = [];
-      for (let i = 0; i < 3; i++) {
-        const d = document.createElement('div');
-        d.className = 'lyr-slot' + (i === 1 ? ' active' : '');
-        box.appendChild(d);
-        slots.push(d);
-      }
-      const escT = (tx) => tx.replace(/</g, '&lt;');
-      function showWindow(idx) {
-        const lines = [idx > 0 ? texts[idx - 1] : '', texts[idx] || '', idx + 1 < texts.length ? texts[idx + 1] : ''];
-        slots.forEach((el, i) => { el.innerHTML = escT(lines[i] || '&nbsp;'); el.classList.toggle('active', i === 1 && Boolean(lines[1])); });
-      }
-      if (!timed) {
-        const dur = audio.duration || 1;
-        lyricsTimer = setInterval(() => {
-          const idx = Math.min(texts.length - 1, Math.floor((audio.currentTime / dur) * texts.length));
-          showWindow(Math.max(0, idx));
-        }, 500);
-        showWindow(0);
-      } else {
-        lyricsTimer = setInterval(() => {
-          const cur = audio.currentTime;
-          let act = -1;
-          for (let i = 0; i < times.length; i++) {
-            if (times[i] !== null && times[i] <= cur + 0.2) act = i;
-          }
-          showWindow(Math.max(0, act));
-        }, 250);
-        showWindow(0);
-      }
-    } catch { box.innerHTML = '<div class="reason">（歌词加载失败）</div>'; }
+      if (!lyricTexts.length) return;                     // 无歌词：保持隐藏，不影响播放
+      el.hidden = false;
+      lyricTimer = setInterval(() => {
+        if (audio.paused) return;                         // 暂停时字幕停住不走
+        const cur = audio.currentTime + 0.35;             // 提前量：歌词先于人声半拍出现
+        let idx = -1;
+        for (let i = 0; i < lyricTimes.length; i++) if (lyricTimes[i] <= cur) idx = i;
+        if (idx !== lyricIdx && idx >= 0) {
+          lyricIdx = idx;
+          el.textContent = lyricTexts[idx];
+          el.classList.remove('tick');
+          void el.offsetWidth;                            // 重启入場动画
+          el.classList.add('tick');
+        }
+      }, 200);
+    } catch { /* 静默：歌词拉不到不影响播放 */ }
   }
 
   function startQueue(b) {
     phase = 'track';
-    if (!b.queue?.length) { if (b.fallbackAudio?.audioUrl) { myLastPlayTs = Date.now(); chan?.postMessage({ type: 'takeover', ts: myLastPlayTs }); audio.src = b.fallbackAudio.audioUrl; if (!userPaused) audio.play().catch(() => {}); } $('lyricsCard').hidden = true; return; }
+    if (!b.queue?.length) { if (b.fallbackAudio?.audioUrl) { myLastPlayTs = Date.now(); chan?.postMessage({ type: 'takeover', ts: myLastPlayTs }); audio.src = b.fallbackAudio.audioUrl; if (!userPaused) audio.play().catch(() => {}); } return; }
     playCurrentIndex();
   }
   function playCurrentIndex() {
