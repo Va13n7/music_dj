@@ -134,8 +134,27 @@
       voiceCtx.resume().catch(() => {});
     } catch { voiceCtx = null; voiceAn = null; }                 // 失败则人声直出
   }
-  // 注意：音乐声道刻意不过 WebAudio 图——createMediaElementSource 是不可逆绑定，
-  // 一旦 AudioContext 被浏览器挂起，音乐会"在播但无声"。迷你波形用装饰动画代替。
+  // 音乐声道波形抽头：createMediaElementSource 是不可逆绑定（这正是上次"在播无声"
+  // 事故的根源），因此本次恢复采用懒创建 + 多重自愈：context 任何时刻挂起都会被
+  // play 事件 / 页面点击 / 切回标签页 / 状态变化 / 波形看门狗自动 resume。
+  let musicCtx = null, musicAn = null, musicTapTried = false;
+  function ensureMusicTap() {
+    if (musicAn || musicTapTried) return;
+    musicTapTried = true;
+    try {
+      musicCtx = new (window.AudioContext || window.webkitAudioContext)();
+      const src = musicCtx.createMediaElementSource(audio);
+      musicAn = musicCtx.createAnalyser();
+      musicAn.fftSize = 256; musicAn.smoothingTimeConstant = 0.82;
+      src.connect(musicAn); musicAn.connect(musicCtx.destination);
+      musicCtx.onstatechange = () => { if (musicCtx.state === 'suspended') musicCtx.resume().catch(() => {}); };
+      musicCtx.resume().catch(() => {});
+    } catch { musicCtx = false; musicAn = null; }
+  }
+  const resumeMusicCtx = () => { if (musicCtx && musicCtx.state === 'suspended') musicCtx.resume().catch(() => {}); };
+  audio.addEventListener('play', () => { ensureMusicTap(); resumeMusicCtx(); });
+  document.addEventListener('click', resumeMusicCtx, true);
+  document.addEventListener('visibilitychange', resumeMusicCtx);
 
   $('unlockBtn').addEventListener('click', () => {
     ensureRadioEffect();
@@ -172,8 +191,10 @@
   }
   (function waveLoop() {
     requestAnimationFrame(waveLoop);
+    // 看门狗：音乐在播而 context 被挂起 → 每 ~2s 拉起一次
+    if (musicCtx && musicCtx.state === 'suspended' && !audio.paused && Math.random() < 0.03) resumeMusicCtx();
     drawSpectrum($('waveVoice'), voiceAn, !voiceA.paused && !!voiceA.src && !voiceA.src.startsWith('data:'), 56, 2.4);
-    drawSpectrum($('waveMusic'), null, !audio.paused && !!audio.src && audio.src.startsWith('http'), 64, 1.5);
+    drawSpectrum($('waveMusic'), musicAn, !audio.paused && !!audio.src && audio.src.startsWith('http'), 64, 1.5);
   })();
 
   // ---------- DJ 实时字幕：逐词卡拉OK（句子级时间轴 + 词级高亮，对齐人声 currentTime） ----------
@@ -976,4 +997,10 @@
   refreshNow();
   renderQueue();
   setTheme((() => { try { return localStorage.getItem('claudiao.theme') || 'dark'; } catch { return 'dark'; } })());
+  // 诊断钩子（只读）：浏览器控制台可查两个声道的 WebAudio 状态
+  window.__claudiaoAudio = () => ({
+    musicCtx: musicCtx ? musicCtx.state : 'none',
+    musicBound: !!musicAn,
+    voiceCtx: voiceCtx ? voiceCtx.state : 'none',
+  });
 })();
