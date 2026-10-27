@@ -134,23 +134,11 @@
       voiceCtx.resume().catch(() => {});
     } catch { voiceCtx = null; voiceAn = null; }                 // 失败则人声直出
   }
-  // 音乐声道波形抽头（必须回连 destination，否则音乐静音）
-  let musicCtx = null, musicAn = null;
-  function ensureMusicTap() {
-    if (musicAn || musicCtx === false) return;
-    try {
-      musicCtx = new (window.AudioContext || window.webkitAudioContext)();
-      const src = musicCtx.createMediaElementSource(audio);
-      musicAn = musicCtx.createAnalyser();
-      musicAn.fftSize = 256; musicAn.smoothingTimeConstant = 0.82;
-      src.connect(musicAn); musicAn.connect(musicCtx.destination);
-      musicCtx.resume().catch(() => {});
-    } catch { musicCtx = false; musicAn = null; }
-  }
+  // 注意：音乐声道刻意不过 WebAudio 图——createMediaElementSource 是不可逆绑定，
+  // 一旦 AudioContext 被浏览器挂起，音乐会"在播但无声"。迷你波形用装饰动画代替。
 
   $('unlockBtn').addEventListener('click', () => {
     ensureRadioEffect();
-    ensureMusicTap();
     for (const el of [audio, voiceA]) {
       el.src = UNLOCK_WAV;
       const p = el.play();
@@ -173,10 +161,11 @@
     for (let i = 0; i < bars; i++) {
       let v;
       if (data) v = data[Math.floor((i / bars) * data.length * 0.72)] / 255;
+      else if (live) v = 0.12 + Math.random() * 0.34;            // 无分析器但在播：装饰性起伏
       else v = 0.03 + Math.random() * 0.035;                     // 待机时的微弱"底噪"，像通电的机器
       const h = Math.max(2, v * cv.height * amp * 0.5);
       ctx.fillStyle = col;
-      ctx.globalAlpha = data ? 0.26 + v * 0.74 : 0.16;
+      ctx.globalAlpha = data ? 0.26 + v * 0.74 : (live ? 0.5 : 0.16);
       ctx.fillRect(i * bw + bw * 0.26, cv.height / 2 - h / 2, bw * 0.48, h);
     }
     ctx.globalAlpha = 1;
@@ -184,7 +173,7 @@
   (function waveLoop() {
     requestAnimationFrame(waveLoop);
     drawSpectrum($('waveVoice'), voiceAn, !voiceA.paused && !!voiceA.src && !voiceA.src.startsWith('data:'), 56, 2.4);
-    drawSpectrum($('waveMusic'), musicAn, !audio.paused && !!audio.src && audio.src.startsWith('http'), 64, 1.5);
+    drawSpectrum($('waveMusic'), null, !audio.paused && !!audio.src && audio.src.startsWith('http'), 64, 1.5);
   })();
 
   // ---------- DJ 实时字幕：逐词卡拉OK（句子级时间轴 + 词级高亮，对齐人声 currentTime） ----------
@@ -292,7 +281,12 @@
     setPlayBtn(false);
   }
   function resumePlayback() {
-    if (!userPaused) { audio.play().catch(() => {}); return; }
+    if (!userPaused) {
+      // 播放键兜底：自动播放被策略拦下时，用户点击（带手势）从这里恢复
+      audio.play().catch(() => {});
+      if (phase === 'say' && voiceA.src && voiceA.paused && !voiceA.ended) voiceA.play().catch(() => {});
+      return;
+    }
     userPaused = false;
     $('state').textContent = phase === 'say' ? 'SPEAKING' : 'PLAYING';
     setPlayBtn(true);
@@ -338,7 +332,14 @@
     voiceA.onended = () => { finishTranscript(); $('speakingTag').hidden = true; if (onEnded) onEnded(); };
     // 开场白音频加载失败：不能卡死在 say 阶段——直接进队列放歌
     voiceA.onerror = () => { finishTranscript(); $('speakingTag').hidden = true; if (onEnded) onEnded(); };
-    voiceA.play().catch(() => { if (onEnded) onEnded(); });
+    voiceA.play().catch((e) => {
+      if (e?.name === 'NotAllowedError') {          // 自动播放被拦：等用户点播放键（带手势后可恢复）
+        $('state').textContent = '点击播放键继续';
+        setPlayBtn(false);
+        return;
+      }
+      if (onEnded) onEnded();
+    });
     $('speakingTag').hidden = false;
     if (text) startTranscript(text);
   }
@@ -660,10 +661,11 @@
   $('btnSkip').addEventListener('click', doNext);
   $('btnPrev').addEventListener('click', () => { if (qIndex > 0) { clearHold(); qIndex--; playCurrentIndex(); } else resumePlayback(); });
 
-  // 暂停/播放按钮
+  // 暂停/播放按钮：以实际播放状态为准（含自动播放被拦后的单击恢复）
   function setPlayBtn(playing) { $('btnPlayPause').textContent = playing ? '⏸' : '▶'; }
   $('btnPlayPause').addEventListener('click', () => {
-    if (userPaused) resumePlayback();
+    const saySuspended = phase === 'say' && voiceA.paused && !voiceA.ended && voiceA.src && !voiceA.src.startsWith('data:');
+    if (userPaused || audio.paused || saySuspended) resumePlayback();
     else pausePlayback();
   });
   audio.addEventListener('play', () => setPlayBtn(true));
