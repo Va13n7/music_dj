@@ -1022,12 +1022,31 @@
       dl.innerHTML = '';
       for (const m of models) {
         const o = document.createElement('option');
-        o.value = m;
+        o.value = typeof m === 'string' ? m : m.id;
         dl.appendChild(o);
       }
     }
-    if (pick && models.includes(pick)) $('brainModel').value = pick;
-    else if (models.length && !$('brainModel').value) $('brainModel').value = models[0];
+    if (pick && models.map((m) => (typeof m === 'string' ? m : m.id)).includes(pick)) $('brainModel').value = pick;
+    else if (models.length && !$('brainModel').value) $('brainModel').value = typeof models[0] === 'string' ? models[0] : models[0].id;
+  }
+  /** 拉取到的模型渲染成可见的点击式卡片（datalist 下拉太隐蔽） */
+  function renderModelChips(models) {
+    const box = $('brainModelChips');
+    if (!box) return;
+    box.innerHTML = '';
+    box.hidden = !models.length;
+    for (const m of models) {
+      const b = document.createElement('button');
+      b.type = 'button';
+      b.className = 'chip' + (m.id === $('brainModel').value ? ' on' : '');
+      b.textContent = m.name ? `${m.id} · ${m.name}` : m.id;
+      b.addEventListener('click', () => {
+        $('brainModel').value = m.id;
+        box.querySelectorAll('.chip').forEach((x) => x.classList.remove('on'));
+        b.classList.add('on');
+      });
+      box.appendChild(b);
+    }
   }
   $('brainProvider').addEventListener('change', () => {
     const p = brainProviders.find((x) => x.id === $('brainProvider').value);
@@ -1048,8 +1067,9 @@
       });
       const j = await r.json();
       if (r.ok && j.ok) {
+        renderModelChips(j.models);
         fillModelSuggestions(j.models, null);
-        $('brainMsg').textContent = `✓ 拉到 ${j.models.length} 个可用模型，模型框可下拉选择`;
+        $('brainMsg').textContent = `✓ 拉到 ${j.models.length} 个可用模型，点选卡片即可使用`;
       } else {
         $('brainMsg').textContent = `✗ ${j.message || '拉取失败'}`;
       }

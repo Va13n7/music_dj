@@ -45,12 +45,14 @@ const dotEnv = parseDotEnvFile(path.join(config.root, 'config', '.env'));
 // 单轮 ~10s 无 agent 开销）；都未配置时回落 zcode-agent 子进程路径。
 const brainPref = state.getPref?.('brain.config') || null;
 const envKey = (dotEnv.BIGMODEL_API_KEY || '').trim();
+let brainPreset = null;
+if (brainPref?.provider) brainPreset = (await import('./adapters/brain/direct-api.js')).BRAIN_PROVIDERS.find((p) => p.id === brainPref.provider);
 const brainAdapter = brainPref?.apiKey
   ? new DirectApiBrainAdapter({
       apiKey: String(brainPref.apiKey),
       model: brainPref.model || config.brain.model,
-      baseUrl: brainPref.baseUrl || undefined,
-      protocol: brainPref.provider === 'custom' ? 'anthropic' : brainPref.protocol,
+      baseUrl: brainPref.baseUrl || brainPreset?.baseUrl || undefined,
+      protocol: brainPreset?.protocol || 'anthropic',
       thinking: brainPref.thinking,
       timeoutMs: config.brain.timeoutMs,
       log,

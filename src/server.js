@@ -105,7 +105,8 @@ export function createServer(deps = {}) {
     state?.setPref?.('brain.config', cfg, `设置页保存（${cfg.provider}/${cfg.model}）`);
     // 热切换：直接替换 BrainService 的适配器，下一轮思考立即生效
     deps.brain.adapter = new DirectApiBrainAdapter({
-      apiKey: cfg.apiKey, model: cfg.model, baseUrl: cfg.baseUrl || undefined,
+      apiKey: cfg.apiKey, model: cfg.model,
+      baseUrl: cfg.baseUrl || preset?.baseUrl || undefined,
       protocol: preset?.protocol || 'anthropic', thinking: cfg.thinking,
       timeoutMs: config.brain.timeoutMs, log,
     });

@@ -16,7 +16,7 @@
 /** 市面主流供应商目录（UI 下拉与默认值；models 仅为常用建议，可实时拉取真实列表） */
 export const BRAIN_PROVIDERS = [
   { id: 'bigmodel', name: '智谱 BigModel', protocol: 'anthropic', baseUrl: 'https://open.bigmodel.cn/api/anthropic', modelsUrl: 'https://open.bigmodel.cn/api/paas/v4/models', models: ['GLM-5-Turbo', 'GLM-5.3-Flash', 'GLM-5.3'], recommended: 'GLM-5-Turbo', thinking: true },
-  { id: 'deepseek', name: 'DeepSeek', protocol: 'anthropic', baseUrl: 'https://api.deepseek.com/anthropic', modelsUrl: 'https://api.deepseek.com/models', models: ['deepseek-chat', 'deepseek-reasoner'], recommended: 'deepseek-chat', thinking: false },
+  { id: 'deepseek', name: 'DeepSeek', protocol: 'anthropic', baseUrl: 'https://api.deepseek.com/anthropic', modelsUrl: 'https://api.deepseek.com/models', models: ['deepseek-flash', 'deepseek-v4-pro', 'deepseek-chat'], recommended: 'deepseek-flash', thinking: false },
   { id: 'moonshot', name: 'Moonshot Kimi', protocol: 'openai', baseUrl: 'https://api.moonshot.cn/v1', modelsUrl: 'https://api.moonshot.cn/v1/models', models: ['kimi-k2-turbo-preview', 'moonshot-v1-8k'], recommended: 'kimi-k2-turbo-preview', thinking: false },
   { id: 'openai', name: 'OpenAI', protocol: 'openai', baseUrl: 'https://api.openai.com/v1', modelsUrl: 'https://api.openai.com/v1/models', models: ['gpt-4o-mini', 'gpt-4o'], recommended: 'gpt-4o-mini', thinking: false },
   { id: 'dashscope', name: '通义千问', protocol: 'openai', baseUrl: 'https://dashscope.aliyuncs.com/compatible-mode/v1', modelsUrl: 'https://dashscope.aliyuncs.com/compatible-mode/v1/models', models: ['qwen-turbo', 'qwen-plus', 'qwen-max'], recommended: 'qwen-turbo', thinking: false },
@@ -28,7 +28,7 @@ const NON_CHAT = /embed|embedding|tts|whisper|speech|audio|image|dall-e|moderati
 
 /**
  * 实时拉取供应商的可用模型列表（各家的 /models 端点均为 OpenAI 列表格式）。
- * 自定义供应商按 baseUrl + /models 解析。返回排序后的模型 id 数组。
+ * 自定义供应商按 baseUrl + /models 解析。返回 [{id, name}]（name 为官方显示名，可能为空）。
  */
 export async function listProviderModels({ provider, apiKey, baseUrl } = {}) {
   const preset = BRAIN_PROVIDERS.find((p) => p.id === provider);
@@ -44,22 +44,27 @@ export async function listProviderModels({ provider, apiKey, baseUrl } = {}) {
   }
   const j = await res.json();
   const raw = Array.isArray(j) ? j : (j.data || j.models || []);
-  const ids = raw
-    .map((x) => (typeof x === 'string' ? x : (x.id || x.name || x.model || '')))
-    .filter(Boolean)
-    .filter((id) => !NON_CHAT.test(id));
-  return [...new Set(ids)].sort((a, b) => a.localeCompare(b));
+  const out = [];
+  const seen = new Set();
+  for (const x of raw) {
+    const id = typeof x === 'string' ? x : (x.id || x.name || x.model || '');
+    if (!id || seen.has(id) || NON_CHAT.test(id)) continue;
+    seen.add(id);
+    const name = typeof x === 'object' ? (x.name || '') : '';
+    out.push({ id, name });
+  }
+  return out.sort((a, b) => a.id.localeCompare(b.id));
 }
 
 export class DirectApiBrainAdapter {
   /**
    * @param {object} opts { apiKey, model, baseUrl, protocol?('anthropic'|'openai'), thinking?(bool), timeoutMs?, log? }
+   *   baseUrl 未传时默认 BigModel（历史兼容）——调用方应显式传供应商的 baseUrl。
    */
-  constructor({ apiKey, model, baseUrl, protocol, thinking, timeoutMs, log } = {}) {
-    const preset = BRAIN_PROVIDERS.find((p) => p.id === (protocol || ''));
-    this.protocol = protocol || 'anthropic';
-    this.baseUrl = (baseUrl || preset?.baseUrl || 'https://open.bigmodel.cn/api/anthropic').replace(/\/+$/, '');
-    this.thinking = thinking ?? Boolean(preset?.thinking);
+  constructor({ apiKey, model, baseUrl, protocol = 'anthropic', thinking, timeoutMs, log } = {}) {
+    this.protocol = protocol;
+    this.baseUrl = (baseUrl || 'https://open.bigmodel.cn/api/anthropic').replace(/\/+$/, '');
+    this.thinking = thinking ?? false;
     this.apiKey = apiKey;
     this.modelId = model || 'GLM-5-Turbo';
     this.timeoutMs = timeoutMs || 60000;
