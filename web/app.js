@@ -1014,22 +1014,47 @@
     const custom = !p || p.id === 'custom';
     $('brainBaseUrlRow').style.display = custom ? 'flex' : 'none';
     if (!custom && !$('brainBaseUrl').dataset.touched) $('brainBaseUrl').value = p?.baseUrl || '';
+    fillModelSuggestions(p?.models || [], p?.recommended);
+  }
+  function fillModelSuggestions(models, pick) {
     const dl = $('modelOptions');
     if (dl) {
       dl.innerHTML = '';
-      for (const m of p?.models || []) {
+      for (const m of models) {
         const o = document.createElement('option');
         o.value = m;
         dl.appendChild(o);
       }
     }
+    if (pick && models.includes(pick)) $('brainModel').value = pick;
+    else if (models.length && !$('brainModel').value) $('brainModel').value = models[0];
   }
   $('brainProvider').addEventListener('change', () => {
     const p = brainProviders.find((x) => x.id === $('brainProvider').value);
-    $('brainModel').value = p?.models?.[0] || '';
+    fillModelSuggestions(p?.models || [], p?.recommended);
     $('brainBaseUrl').dataset.touched = '';
     if (p?.baseUrl) $('brainBaseUrl').value = p.baseUrl;
     syncBaseUrlRow();
+    if (p?.recommended) $('brainMsg').textContent = `推荐用 ${p.recommended}（电台场景：快且便宜；填好 Key 后可拉取全部可用模型）`;
+  });
+  $('btnBrainModels').addEventListener('click', async () => {
+    const f = brainForm();
+    if (!f.apiKey) { $('brainMsg').textContent = '先填 API Key 才能拉取模型列表'; return; }
+    $('btnBrainModels').disabled = true;
+    $('brainMsg').textContent = '拉取模型列表中…';
+    try {
+      const r = await fetch('/api/brain-config/models', {
+        method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(f),
+      });
+      const j = await r.json();
+      if (r.ok && j.ok) {
+        fillModelSuggestions(j.models, null);
+        $('brainMsg').textContent = `✓ 拉到 ${j.models.length} 个可用模型，模型框可下拉选择`;
+      } else {
+        $('brainMsg').textContent = `✗ ${j.message || '拉取失败'}`;
+      }
+    } catch { $('brainMsg').textContent = '✗ 网络错误'; }
+    $('btnBrainModels').disabled = false;
   });
   $('brainBaseUrl').addEventListener('input', () => { $('brainBaseUrl').dataset.touched = '1'; });
   function brainForm() {

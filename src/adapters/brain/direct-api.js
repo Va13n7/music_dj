@@ -13,15 +13,43 @@
  * 其他厂商传了可能报错，故按 provider 开关控制。
  */
 
-/** 市面主流供应商目录（UI 下拉与默认值；models 仅为常用建议，可自由填写） */
+/** 市面主流供应商目录（UI 下拉与默认值；models 仅为常用建议，可实时拉取真实列表） */
 export const BRAIN_PROVIDERS = [
-  { id: 'bigmodel', name: '智谱 BigModel', protocol: 'anthropic', baseUrl: 'https://open.bigmodel.cn/api/anthropic', models: ['GLM-5-Turbo', 'GLM-5.3-Flash', 'GLM-5.3'], thinking: true },
-  { id: 'deepseek', name: 'DeepSeek', protocol: 'anthropic', baseUrl: 'https://api.deepseek.com/anthropic', models: ['deepseek-chat', 'deepseek-reasoner'], thinking: false },
-  { id: 'moonshot', name: 'Moonshot Kimi', protocol: 'openai', baseUrl: 'https://api.moonshot.cn/v1', models: ['kimi-k2-turbo-preview', 'moonshot-v1-8k'], thinking: false },
-  { id: 'openai', name: 'OpenAI', protocol: 'openai', baseUrl: 'https://api.openai.com/v1', models: ['gpt-4o-mini', 'gpt-4o'], thinking: false },
-  { id: 'dashscope', name: '通义千问', protocol: 'openai', baseUrl: 'https://dashscope.aliyuncs.com/compatible-mode/v1', models: ['qwen-turbo', 'qwen-plus', 'qwen-max'], thinking: false },
-  { id: 'custom', name: '自定义 (Anthropic 协议)', protocol: 'anthropic', baseUrl: '', models: [], thinking: false },
+  { id: 'bigmodel', name: '智谱 BigModel', protocol: 'anthropic', baseUrl: 'https://open.bigmodel.cn/api/anthropic', modelsUrl: 'https://open.bigmodel.cn/api/paas/v4/models', models: ['GLM-5-Turbo', 'GLM-5.3-Flash', 'GLM-5.3'], recommended: 'GLM-5-Turbo', thinking: true },
+  { id: 'deepseek', name: 'DeepSeek', protocol: 'anthropic', baseUrl: 'https://api.deepseek.com/anthropic', modelsUrl: 'https://api.deepseek.com/models', models: ['deepseek-chat', 'deepseek-reasoner'], recommended: 'deepseek-chat', thinking: false },
+  { id: 'moonshot', name: 'Moonshot Kimi', protocol: 'openai', baseUrl: 'https://api.moonshot.cn/v1', modelsUrl: 'https://api.moonshot.cn/v1/models', models: ['kimi-k2-turbo-preview', 'moonshot-v1-8k'], recommended: 'kimi-k2-turbo-preview', thinking: false },
+  { id: 'openai', name: 'OpenAI', protocol: 'openai', baseUrl: 'https://api.openai.com/v1', modelsUrl: 'https://api.openai.com/v1/models', models: ['gpt-4o-mini', 'gpt-4o'], recommended: 'gpt-4o-mini', thinking: false },
+  { id: 'dashscope', name: '通义千问', protocol: 'openai', baseUrl: 'https://dashscope.aliyuncs.com/compatible-mode/v1', modelsUrl: 'https://dashscope.aliyuncs.com/compatible-mode/v1/models', models: ['qwen-turbo', 'qwen-plus', 'qwen-max'], recommended: 'qwen-turbo', thinking: false },
+  { id: 'custom', name: '自定义 (Anthropic 协议)', protocol: 'anthropic', baseUrl: '', modelsUrl: '', models: [], recommended: '', thinking: false },
 ];
+
+// 明显非对话用途的模型（embedding/tts/视觉等）不出现在可选列表里
+const NON_CHAT = /embed|embedding|tts|whisper|speech|audio|image|dall-e|moderation|rerank|vl-|omni|realtime|video|cogview|cogvideo|charglm|emohaa|codegeex/i;
+
+/**
+ * 实时拉取供应商的可用模型列表（各家的 /models 端点均为 OpenAI 列表格式）。
+ * 自定义供应商按 baseUrl + /models 解析。返回排序后的模型 id 数组。
+ */
+export async function listProviderModels({ provider, apiKey, baseUrl } = {}) {
+  const preset = BRAIN_PROVIDERS.find((p) => p.id === provider);
+  let url = preset?.modelsUrl || '';
+  if ((!url || provider === 'custom') && baseUrl) url = baseUrl.replace(/\/+$/, '') + '/models';
+  if (!url) throw Object.assign(new Error('该供应商未提供模型列表端点，请手动填写模型名'), { code: 'E_NO_MODELS_URL' });
+  if (!apiKey) throw Object.assign(new Error('需要先填 API Key'), { code: 'E_BAD_REQUEST' });
+
+  const res = await fetch(url, { headers: { Authorization: `Bearer ${apiKey}` } });
+  if (!res.ok) {
+    const detail = (await res.text().catch(() => '')).slice(0, 160);
+    throw Object.assign(new Error(`模型列表拉取失败 ${res.status}: ${detail}`), { code: 'E_HTTP' });
+  }
+  const j = await res.json();
+  const raw = Array.isArray(j) ? j : (j.data || j.models || []);
+  const ids = raw
+    .map((x) => (typeof x === 'string' ? x : (x.id || x.name || x.model || '')))
+    .filter(Boolean)
+    .filter((id) => !NON_CHAT.test(id));
+  return [...new Set(ids)].sort((a, b) => a.localeCompare(b));
+}
 
 export class DirectApiBrainAdapter {
   /**

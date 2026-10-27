@@ -145,7 +145,8 @@
         <select id="brainProvider" style="flex:1"></select>
       </div>
       <div class="row" style="margin-top:8px">
-        <input type="text" id="brainModel" list="modelOptions" placeholder="模型名（可下拉选择或自由填写）" style="flex:1" autocomplete="off">
+        <input type="text" id="brainModel" list="modelOptions" placeholder="模型名（拉取列表后下拉选择，或自由填写）" style="flex:1" autocomplete="off">
+        <button class="pill" id="btnBrainModels" title="用你的 Key 从供应商拉取真实可用模型">拉取模型</button>
         <datalist id="modelOptions"></datalist>
       </div>
       <div class="row" style="margin-top:8px">

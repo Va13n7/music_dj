@@ -11,7 +11,7 @@ import fs from 'node:fs';
 import path from 'node:path';
 import crypto from 'node:crypto';
 import { WsHub } from './ws/hub.js';
-import { BRAIN_PROVIDERS, DirectApiBrainAdapter } from './adapters/brain/direct-api.js';
+import { BRAIN_PROVIDERS, DirectApiBrainAdapter, listProviderModels } from './adapters/brain/direct-api.js';
 
 const STATIC_ALLOWLIST = new Set(['.html', '.js', '.css', '.json', '.webmanifest', '.png', '.jpg', '.jpeg', '.svg', '.ico', '.webp', '.mp3', '.wav']);
 
@@ -111,6 +111,19 @@ export function createServer(deps = {}) {
     });
     log.info?.('大脑已热切换', { provider: cfg.provider, model: cfg.model });
     res.json({ ok: true, activeKind: 'direct-api', model: cfg.model });
+  });
+
+  app.post('/api/brain-config/models', async (req, res) => {
+    try {
+      const models = await listProviderModels({
+        provider: req.body?.provider,
+        apiKey: String(req.body?.apiKey || '').trim(),
+        baseUrl: String(req.body?.baseUrl || '').trim(),
+      });
+      res.json({ ok: true, models });
+    } catch (e) {
+      res.status(e.code === 'E_BAD_REQUEST' ? 400 : 502).json({ error: e.code || 'E_MODELS', message: e.message });
+    }
   });
 
   app.post('/api/brain-config/test', async (req, res) => {
