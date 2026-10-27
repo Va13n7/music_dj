@@ -11,6 +11,7 @@ import { takeOverInstance, clearInstanceLock } from './lib/instance.js';
 import { createLogger } from './lib/log.js';
 import { StateStore } from './layer2/state.js';
 import { ZcodeAgentAdapter } from './adapters/brain/zcode-agent.js';
+import { DirectApiBrainAdapter } from './adapters/brain/direct-api.js';
 import { BrainService } from './layer2/brain.js';
 import { templateAction } from './layer2/fallback-templates.js';
 import { MusicProviderFacade } from './providers/music/index.js';
@@ -40,7 +41,18 @@ const state = new StateStore(path.join(config.root, config.dbPath), { logger: lo
 log.info('状态库已就绪', { dbPath: config.dbPath });
 
 const dotEnv = parseDotEnvFile(path.join(config.root, 'config', '.env'));
-const brainAdapter = new ZcodeAgentAdapter({ root: config.root, env: dotEnv, log });
+// 大脑适配器：优先直连开放平台（BIGMODEL_API_KEY，单轮 ~10s 无 agent 开销）；
+// 未配置 key 时回落 zcode-agent 子进程路径（依赖桌面端凭据，单轮 ~100s）。
+const brainAdapter = (dotEnv.BIGMODEL_API_KEY || '').trim()
+  ? new DirectApiBrainAdapter({
+      apiKey: dotEnv.BIGMODEL_API_KEY.trim(),
+      model: config.brain.model,
+      baseUrl: dotEnv.BIGMODEL_API_BASE,
+      timeoutMs: config.brain.timeoutMs,
+      log,
+    })
+  : new ZcodeAgentAdapter({ root: config.root, env: dotEnv, log });
+log.info?.('大脑适配器', { kind: brainAdapter instanceof DirectApiBrainAdapter ? 'direct-api' : 'zcode-agent', model: config.brain.model });
 const brain = new BrainService({
   adapter: brainAdapter,
   env: { timeoutMs: config.brain.timeoutMs, retry: config.brain.retry },
