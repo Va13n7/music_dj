@@ -39,12 +39,14 @@
     <div class="now-card">
       <div class="wave-hero">
         <canvas id="waveVoice"></canvas>
-        <span class="speaking mono" id="speakingTag" hidden><i></i>SPEAKING</span>
-        <span class="badge mono" id="state">IDLE</span>
       </div>
       <div class="now-body">
         <div class="kicker mono">NOW PLAYING</div>
-        <h1 class="program" id="program">Tuning in…</h1>
+        <div class="program-row">
+          <h1 class="program" id="program">Tuning in…</h1>
+          <span class="speaking mono" id="speakingTag" hidden><i></i>SPEAKING</span>
+        </div>
+        <span id="state" hidden></span>
         <div class="trackline">
           <img class="cover" id="cover" alt="" hidden>
           <div class="trackmeta">
