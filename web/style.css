@@ -178,7 +178,11 @@ main { flex: 1; width: 100%; max-width: 600px; margin: 0 auto; padding: 18px 14p
 .dotlive.on { background: var(--green); animation: pulse 1.4s infinite; }
 
 /* ---------- 队列 ---------- */
-#queueList { list-style: none; display: flex; flex-direction: column; }
+#queueList { list-style: none; display: flex; flex-direction: column; max-height: 226px; overflow-y: auto; }
+#queueList, .transcript, .chatlog, #lyricsBox { scrollbar-width: thin; scrollbar-color: var(--line2) transparent; }
+#queueList::-webkit-scrollbar, .transcript::-webkit-scrollbar, .chatlog::-webkit-scrollbar, #lyricsBox::-webkit-scrollbar { width: 6px; }
+#queueList::-webkit-scrollbar-thumb, .transcript::-webkit-scrollbar-thumb, .chatlog::-webkit-scrollbar-thumb, #lyricsBox::-webkit-scrollbar-thumb { background: var(--line2); border-radius: 3px; }
+#queueList::-webkit-scrollbar-track, .transcript::-webkit-scrollbar-track, .chatlog::-webkit-scrollbar-track, #lyricsBox::-webkit-scrollbar-track { background: transparent; }
 .qitem {
   display: flex; align-items: center; gap: 12px;
   padding: 9px 10px; border-radius: 10px; cursor: pointer;
@@ -311,6 +315,7 @@ nav button.active { color: var(--fg); font-weight: 600; }
    左列：时钟 + 队列 + 歌词｜中列：正在播 + DJ 字幕｜右列：聊天
    ============================================================ */
 @media (min-width: 1180px) {
+  body { height: 100vh; overflow: hidden; }   /* 高度钉死视口：子级 height:100% 才有定值可解析，页面永不出现滚动条 */
   main { flex: 1; min-height: 0; height: auto; overflow: hidden; max-width: 1560px; padding: 14px 18px; }
   .view { height: 100%; overflow-y: auto; }
 
@@ -344,7 +349,7 @@ nav button.active { color: var(--fg); font-weight: 600; }
   .say, .reason { display: none; }   /* 桌面上这些信息在字幕与聊天里都有，省高度 */
 
   .queue-card { grid-area: queue; display: flex; flex-direction: column; min-height: 0; }
-  #queueList { flex: 1; min-height: 0; overflow-y: auto; }
+  #queueList { flex: 1; min-height: 0; overflow-y: auto; max-height: none; }
 
   .lyrics-card { grid-area: lyrics; }
   #lyricsBox { height: 110px; }
