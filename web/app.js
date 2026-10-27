@@ -986,6 +986,42 @@
 
   // ---------- Settings：大脑 API 接入 ----------
   let brainProviders = [];
+  function renderSavedConfigs(saved, activeId) {
+    const box = $('brainSavedList');
+    const count = $('brainSavedCount');
+    if (count) count.textContent = String(saved.length);
+    if (!box) return;
+    box.innerHTML = '';
+    box.hidden = !saved.length;
+    for (const s of saved) {
+      const pname = (brainProviders.find((p) => p.id === s.provider)?.name) || s.provider;
+      const row = document.createElement('div');
+      row.className = 'savedrow' + (s.id === activeId ? ' active' : '');
+      row.innerHTML = `<span class="s-main"><b>${esc(pname)} · ${esc(s.model)}</b>` +
+        `<i>Key ••••${esc((s.keyMasked || '').slice(-4))}</i></span>` +
+        `<span class="s-btns">` +
+        (s.id === activeId ? `<span class="mono s-on">● 使用中</span>` : `<button class="pill" data-act="use">使用</button>`) +
+        `<button class="pill" data-act="del" title="删除此配置">删</button></span>`;
+      row.querySelector('[data-act="use"]')?.addEventListener('click', async () => {
+        try {
+          const r = await fetch('/api/brain-config/activate', {
+            method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ id: s.id }),
+          });
+          const j = await r.json();
+          if (r.ok && j.ok) { addChat('system', `大脑已切换：${pname} · ${s.model}`); refreshBrainConfig(); }
+        } catch { /* ignore */ }
+      });
+      row.querySelector('[data-act="del"]')?.addEventListener('click', async () => {
+        try {
+          await fetch('/api/brain-config/delete', {
+            method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ id: s.id }),
+          });
+          refreshBrainConfig();
+        } catch { /* ignore */ }
+      });
+      box.appendChild(row);
+    }
+  }
   async function refreshBrainConfig() {
     try {
       const j = await (await fetch('/api/brain-config')).json();
@@ -998,7 +1034,8 @@
         sel.appendChild(opt);
       }
       if (j.current) {
-        sel.value = j.current.provider in Object.fromEntries(brainProviders.map((p) => [p.id, 1])) ? j.current.provider : 'custom';
+        const ids = Object.fromEntries(brainProviders.map((p) => [p.id, 1]));
+        sel.value = j.current.provider in ids ? j.current.provider : 'custom';
         if (sel.value !== j.current.provider) sel.value = 'custom';
         $('brainModel').value = j.current.model || '';
         $('brainBaseUrl').value = j.current.baseUrl || '';
@@ -1006,6 +1043,7 @@
       } else {
         $('brainActive').textContent = '未配置（zcode 兜底）';
       }
+      renderSavedConfigs(j.saved || [], j.activeId);
       syncBaseUrlRow();
     } catch { /* ignore */ }
   }

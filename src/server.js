@@ -72,15 +72,21 @@ export function createServer(deps = {}) {
     }
   });
 
-  // ---------- 大脑 API 接入（设置页）：供应商目录 / 测试 / 保存热切换 ----------
+  // ---------- 大脑 API 接入（设置页）：钥匙串 / 测试 / 保存热切换 ----------
 
   app.get('/api/brain-config', (req, res) => {
-    const pref = state?.getPref?.('brain.config') || null;
+    const saved = state?.getPref?.('brain.saved') || [];
+    const active = state?.getPref?.('brain.config') || null;
     const envKey = Boolean(deps.brainEnvKey);
     res.json({
       providers: BRAIN_PROVIDERS,
-      current: pref
-        ? { provider: pref.provider, model: pref.model, baseUrl: pref.baseUrl || '', keyMasked: '••••' + String(pref.apiKey).slice(-4), source: 'settings' }
+      saved: saved.map((s) => ({
+        id: s.id, provider: s.provider, model: s.model, baseUrl: s.baseUrl || '',
+        keyMasked: '••••' + String(s.apiKey).slice(-4), savedAt: s.savedAt,
+      })),
+      activeId: active?.id || null,
+      current: active
+        ? { provider: active.provider, model: active.model, baseUrl: active.baseUrl || '', keyMasked: '••••' + String(active.apiKey).slice(-4), source: 'settings' }
         : envKey
           ? { provider: 'bigmodel', model: config.brain.model, baseUrl: 'https://open.bigmodel.cn/api/anthropic', keyMasked: '••••（config/.env）', source: 'env' }
           : null,
@@ -88,30 +94,61 @@ export function createServer(deps = {}) {
     });
   });
 
+  const buildBrainAdapter = (cfg) => {
+    const preset = BRAIN_PROVIDERS.find((p) => p.id === cfg.provider);
+    return new DirectApiBrainAdapter({
+      apiKey: cfg.apiKey, model: cfg.model,
+      baseUrl: cfg.baseUrl || preset?.baseUrl || undefined,
+      protocol: preset?.protocol || 'anthropic', thinking: Boolean(cfg.thinking),
+      timeoutMs: config.brain.timeoutMs, log,
+    });
+  };
+
   app.put('/api/brain-config', (req, res) => {
-    const { provider, apiKey, model, baseUrl, thinking } = req.body || {};
+    const { provider, apiKey, model, baseUrl, thinking, id } = req.body || {};
     const preset = BRAIN_PROVIDERS.find((p) => p.id === provider);
     if (!preset && provider !== 'custom') return res.status(400).json({ error: 'E_BAD_REQUEST', message: '未知供应商' });
     if (!String(apiKey || '').trim()) return res.status(400).json({ error: 'E_BAD_REQUEST', message: 'API Key 不能为空' });
     if (!String(model || '').trim()) return res.status(400).json({ error: 'E_BAD_REQUEST', message: '模型名不能为空' });
     if (provider === 'custom' && !String(baseUrl || '').trim()) return res.status(400).json({ error: 'E_BAD_REQUEST', message: '自定义供应商需要填写 Base URL' });
-    const cfg = {
-      provider: provider || 'custom',
-      apiKey: String(apiKey).trim(),
-      model: String(model).trim(),
-      baseUrl: String(baseUrl || '').trim(),
-      thinking: Boolean(thinking),
+    // 钥匙串 upsert：同供应商+同模型 视为更新同一把；否则新增
+    const saved = state?.getPref?.('brain.saved') || [];
+    const slug = `${provider}|${model}|${String(baseUrl || '').trim()}`;
+    const existing = saved.find((s) => s.slug === slug || s.id === id);
+    const entryId = existing?.id || crypto.randomUUID();
+    const entry = {
+      id: entryId, slug, provider, apiKey: String(apiKey).trim(), model: String(model).trim(),
+      baseUrl: String(baseUrl || '').trim(), thinking: Boolean(thinking),
+      savedAt: existing?.savedAt || new Date().toISOString(),
     };
-    state?.setPref?.('brain.config', cfg, `设置页保存（${cfg.provider}/${cfg.model}）`);
-    // 热切换：直接替换 BrainService 的适配器，下一轮思考立即生效
-    deps.brain.adapter = new DirectApiBrainAdapter({
-      apiKey: cfg.apiKey, model: cfg.model,
-      baseUrl: cfg.baseUrl || preset?.baseUrl || undefined,
-      protocol: preset?.protocol || 'anthropic', thinking: cfg.thinking,
-      timeoutMs: config.brain.timeoutMs, log,
-    });
-    log.info?.('大脑已热切换', { provider: cfg.provider, model: cfg.model });
-    res.json({ ok: true, activeKind: 'direct-api', model: cfg.model });
+    if (existing) saved[saved.indexOf(existing)] = entry;
+    else saved.push(entry);
+    state?.setPref?.('brain.saved', saved);
+    // 保存即激活
+    state?.setPref?.('brain.config', { ...entry });
+    deps.brain.adapter = buildBrainAdapter(entry);
+    log.info?.('大脑已热切换', { provider: entry.provider, model: entry.model, savedCount: saved.length });
+    res.json({ ok: true, activeKind: 'direct-api', model: entry.model, id: entryId, savedCount: saved.length });
+  });
+
+  app.post('/api/brain-config/activate', (req, res) => {
+    const id = String(req.body?.id || '');
+    const saved = state?.getPref?.('brain.saved') || [];
+    const entry = saved.find((s) => s.id === id);
+    if (!entry) return res.status(404).json({ error: 'E_NOT_FOUND', message: '该接入配置不存在' });
+    state?.setPref?.('brain.config', { ...entry });
+    deps.brain.adapter = buildBrainAdapter(entry);
+    log.info?.('大脑已切换', { provider: entry.provider, model: entry.model });
+    res.json({ ok: true, model: entry.model, provider: entry.provider });
+  });
+
+  app.post('/api/brain-config/delete', (req, res) => {
+    const id = String(req.body?.id || '');
+    const saved = state?.getPref?.('brain.saved') || [];
+    const next = saved.filter((s) => s.id !== id);
+    if (next.length === saved.length) return res.status(404).json({ error: 'E_NOT_FOUND', message: '配置不存在' });
+    state?.setPref?.('brain.saved', next);
+    res.json({ ok: true, savedCount: next.length });
   });
 
   app.post('/api/brain-config/models', async (req, res) => {
