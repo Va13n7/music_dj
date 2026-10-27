@@ -7,6 +7,7 @@
  */
 import path from 'node:path';
 import { loadConfig, parseDotEnvFile } from './lib/config.js';
+import { takeOverInstance, clearInstanceLock } from './lib/instance.js';
 import { createLogger } from './lib/log.js';
 import { StateStore } from './layer2/state.js';
 import { ZcodeAgentAdapter } from './adapters/brain/zcode-agent.js';
@@ -30,6 +31,9 @@ if (config.log.logPrompt) {
 }
 
 log.info('配置已装载', { brain: config.brain.adapter, model: config.brain.model, tz: config.tz });
+
+// ---------- 单实例接管：自动结束上一个电台后端 ----------
+takeOverInstance({ root: config.root, port: config.server.port, log });
 
 // ---------- 依赖组装 ----------
 const state = new StateStore(path.join(config.root, config.dbPath), { logger: log });
@@ -93,6 +97,7 @@ function shutdown(signal) {
   try { server.close(); } catch { /* ignore */ }
   try { brain.close(); } catch { /* ignore */ }
   try { state.close(); } catch { /* ignore */ }
+  try { clearInstanceLock(config.root); } catch { /* ignore */ }
   process.exit(0);
 }
 process.on('SIGINT', () => shutdown('SIGINT'));

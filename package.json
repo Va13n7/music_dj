@@ -10,6 +10,7 @@
   "main": "src/server.js",
   "scripts": {
     "start": "node src/main.js",
+    "stop": "node tools/stop-server.js",
     "dev": "node --watch src/main.js",
     "test": "node --test \"tests/**/*.test.js\"",
     "test:unit": "node --test \"tests/unit/**/*.test.js\"",
