@@ -41,18 +41,34 @@ const state = new StateStore(path.join(config.root, config.dbPath), { logger: lo
 log.info('状态库已就绪', { dbPath: config.dbPath });
 
 const dotEnv = parseDotEnvFile(path.join(config.root, 'config', '.env'));
-// 大脑适配器：优先直连开放平台（BIGMODEL_API_KEY，单轮 ~10s 无 agent 开销）；
-// 未配置 key 时回落 zcode-agent 子进程路径（依赖桌面端凭据，单轮 ~100s）。
-const brainAdapter = (dotEnv.BIGMODEL_API_KEY || '').trim()
+// 大脑适配器：优先直连（设置页保存的 brain.config pref > .env 的 BIGMODEL_API_KEY，
+// 单轮 ~10s 无 agent 开销）；都未配置时回落 zcode-agent 子进程路径。
+const brainPref = state.getPref?.('brain.config') || null;
+const envKey = (dotEnv.BIGMODEL_API_KEY || '').trim();
+const brainAdapter = brainPref?.apiKey
   ? new DirectApiBrainAdapter({
-      apiKey: dotEnv.BIGMODEL_API_KEY.trim(),
-      model: config.brain.model,
-      baseUrl: dotEnv.BIGMODEL_API_BASE,
+      apiKey: String(brainPref.apiKey),
+      model: brainPref.model || config.brain.model,
+      baseUrl: brainPref.baseUrl || undefined,
+      protocol: brainPref.provider === 'custom' ? 'anthropic' : brainPref.protocol,
+      thinking: brainPref.thinking,
       timeoutMs: config.brain.timeoutMs,
       log,
     })
-  : new ZcodeAgentAdapter({ root: config.root, env: dotEnv, log });
-log.info?.('大脑适配器', { kind: brainAdapter instanceof DirectApiBrainAdapter ? 'direct-api' : 'zcode-agent', model: config.brain.model });
+  : envKey
+    ? new DirectApiBrainAdapter({
+        apiKey: envKey,
+        model: config.brain.model,
+        baseUrl: dotEnv.BIGMODEL_API_BASE,
+        timeoutMs: config.brain.timeoutMs,
+        log,
+      })
+    : new ZcodeAgentAdapter({ root: config.root, env: dotEnv, log });
+log.info?.('大脑适配器', {
+  kind: brainAdapter instanceof DirectApiBrainAdapter ? 'direct-api' : 'zcode-agent',
+  model: config.brain.model,
+  from: brainPref?.apiKey ? 'settings' : envKey ? 'env' : 'fallback',
+});
 const brain = new BrainService({
   adapter: brainAdapter,
   env: { timeoutMs: config.brain.timeoutMs, retry: config.brain.retry },
@@ -77,7 +93,7 @@ const compute = new ComputeService({
 // ---------- HTTP + WS ----------
 const { server, hub } = createServer({
   config, compute, state, brain, music, tts,
-  env: dotEnv, brainAdapter,
+  env: dotEnv, brainAdapter, brainEnvKey: envKey,
   log,
   corpusHashFn: () => {
     // 延迟 import 避免循环依赖

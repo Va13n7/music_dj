@@ -139,6 +139,28 @@
   <!-- ================= 设置 ================= -->
   <section class="view" id="view-settings">
     <div class="card">
+      <div class="card-head mono">BRAIN API <span class="badge mono" id="brainActive">-</span></div>
+      <div class="reason" style="margin-bottom:10px">选择模型供应商并填入对应 API Key，保存后立即生效（无需重启）。Key 只存在本机数据库，不会上传。</div>
+      <div class="row" style="margin-top:0">
+        <select id="brainProvider" style="flex:1"></select>
+      </div>
+      <div class="row" style="margin-top:8px">
+        <input type="text" id="brainModel" list="modelOptions" placeholder="模型名（可下拉选择或自由填写）" style="flex:1" autocomplete="off">
+        <datalist id="modelOptions"></datalist>
+      </div>
+      <div class="row" style="margin-top:8px">
+        <input type="password" id="brainKey" placeholder="API Key" style="flex:1" autocomplete="off">
+      </div>
+      <div class="row" id="brainBaseUrlRow" style="margin-top:8px">
+        <input type="text" id="brainBaseUrl" placeholder="Base URL（自定义供应商必填）" style="flex:1">
+      </div>
+      <div class="row">
+        <button class="primary" id="btnBrainSave">保存并生效</button>
+        <button class="pill" id="btnBrainTest">测试连接</button>
+        <span class="reason" id="brainMsg"></span>
+      </div>
+    </div>
+    <div class="card">
       <div class="card-head mono">HEALTH</div>
       <table id="healthTable"></table>
       <div class="row"><button class="pill" id="btnRefreshHealth">刷新状态</button></div>

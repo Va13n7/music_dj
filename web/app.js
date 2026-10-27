@@ -97,7 +97,7 @@
     document.querySelectorAll('.view').forEach((v) => v.classList.remove('active'));
     $(b.dataset.view).classList.add('active');
     if (b.dataset.view === 'view-profile') { loadTaste(); loadProfile(); refreshNetease(); }
-    if (b.dataset.view === 'view-settings') refreshHealth();
+    if (b.dataset.view === 'view-settings') { refreshHealth(); refreshBrainConfig(); }
   }));
 
   // ---------- autoplay 解锁 ----------
@@ -982,6 +982,99 @@
       }
     } catch { $('plMsg').textContent = '网络错误（分析耗时长，若超时请重试）'; }
     $('btnPlAnalyze').disabled = false;
+  });
+
+  // ---------- Settings：大脑 API 接入 ----------
+  let brainProviders = [];
+  async function refreshBrainConfig() {
+    try {
+      const j = await (await fetch('/api/brain-config')).json();
+      brainProviders = j.providers || [];
+      const sel = $('brainProvider');
+      sel.innerHTML = '';
+      for (const p of brainProviders) {
+        const opt = document.createElement('option');
+        opt.value = p.id; opt.textContent = p.name;
+        sel.appendChild(opt);
+      }
+      if (j.current) {
+        sel.value = j.current.provider in Object.fromEntries(brainProviders.map((p) => [p.id, 1])) ? j.current.provider : 'custom';
+        if (sel.value !== j.current.provider) sel.value = 'custom';
+        $('brainModel').value = j.current.model || '';
+        $('brainBaseUrl').value = j.current.baseUrl || '';
+        $('brainActive').textContent = j.current.source === 'settings' ? `生效中 · ${j.current.model}` : `env 兜底 · ${j.current.model}`;
+      } else {
+        $('brainActive').textContent = '未配置（zcode 兜底）';
+      }
+      syncBaseUrlRow();
+    } catch { /* ignore */ }
+  }
+  function syncBaseUrlRow() {
+    const p = brainProviders.find((x) => x.id === $('brainProvider').value);
+    const custom = !p || p.id === 'custom';
+    $('brainBaseUrlRow').style.display = custom ? 'flex' : 'none';
+    if (!custom && !$('brainBaseUrl').dataset.touched) $('brainBaseUrl').value = p?.baseUrl || '';
+    const dl = $('modelOptions');
+    if (dl) {
+      dl.innerHTML = '';
+      for (const m of p?.models || []) {
+        const o = document.createElement('option');
+        o.value = m;
+        dl.appendChild(o);
+      }
+    }
+  }
+  $('brainProvider').addEventListener('change', () => {
+    const p = brainProviders.find((x) => x.id === $('brainProvider').value);
+    $('brainModel').value = p?.models?.[0] || '';
+    $('brainBaseUrl').dataset.touched = '';
+    if (p?.baseUrl) $('brainBaseUrl').value = p.baseUrl;
+    syncBaseUrlRow();
+  });
+  $('brainBaseUrl').addEventListener('input', () => { $('brainBaseUrl').dataset.touched = '1'; });
+  function brainForm() {
+    return {
+      provider: $('brainProvider').value,
+      model: $('brainModel').value.trim(),
+      apiKey: $('brainKey').value.trim(),
+      baseUrl: $('brainBaseUrl').value.trim(),
+    };
+  }
+  $('btnBrainTest').addEventListener('click', async () => {
+    const f = brainForm();
+    if (!f.apiKey) { $('brainMsg').textContent = '先填 API Key 再测试'; return; }
+    $('btnBrainTest').disabled = true;
+    $('brainMsg').textContent = '测试中…';
+    try {
+      const r = await fetch('/api/brain-config/test', {
+        method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(f),
+      });
+      const j = await r.json();
+      $('brainMsg').textContent = j.ok
+        ? `✓ 连接成功（${(j.latencyMs / 1000).toFixed(1)}s）`
+        : `✗ ${j.detail || j.message || '连接失败'}`;
+    } catch { $('brainMsg').textContent = '✗ 网络错误'; }
+    $('btnBrainTest').disabled = false;
+  });
+  $('btnBrainSave').addEventListener('click', async () => {
+    const f = brainForm();
+    if (!f.model) { $('brainMsg').textContent = '模型名不能为空'; return; }
+    $('btnBrainSave').disabled = true;
+    try {
+      const r = await fetch('/api/brain-config', {
+        method: 'PUT', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(f),
+      });
+      const j = await r.json();
+      if (r.ok && j.ok) {
+        $('brainMsg').textContent = '✓ 已保存并生效，下一轮播报即用新模型';
+        $('brainKey').value = '';
+        refreshBrainConfig();
+        refreshHealth();
+      } else {
+        $('brainMsg').textContent = `✗ ${j.message || r.status}`;
+      }
+    } catch { $('brainMsg').textContent = '✗ 网络错误'; }
+    $('btnBrainSave').disabled = false;
   });
 
   // ---------- Settings：健康 ----------

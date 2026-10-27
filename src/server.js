@@ -11,6 +11,7 @@ import fs from 'node:fs';
 import path from 'node:path';
 import crypto from 'node:crypto';
 import { WsHub } from './ws/hub.js';
+import { BRAIN_PROVIDERS, DirectApiBrainAdapter } from './adapters/brain/direct-api.js';
 
 const STATIC_ALLOWLIST = new Set(['.html', '.js', '.css', '.json', '.webmanifest', '.png', '.jpg', '.jpeg', '.svg', '.ico', '.webp', '.mp3', '.wav']);
 
@@ -69,6 +70,61 @@ export function createServer(deps = {}) {
       log.error?.('chat 失败', { error: e.message });
       res.status(500).json({ error: 'E_COMPUTE', message: e.message });
     }
+  });
+
+  // ---------- 大脑 API 接入（设置页）：供应商目录 / 测试 / 保存热切换 ----------
+
+  app.get('/api/brain-config', (req, res) => {
+    const pref = state?.getPref?.('brain.config') || null;
+    const envKey = Boolean(deps.brainEnvKey);
+    res.json({
+      providers: BRAIN_PROVIDERS,
+      current: pref
+        ? { provider: pref.provider, model: pref.model, baseUrl: pref.baseUrl || '', keyMasked: '••••' + String(pref.apiKey).slice(-4), source: 'settings' }
+        : envKey
+          ? { provider: 'bigmodel', model: config.brain.model, baseUrl: 'https://open.bigmodel.cn/api/anthropic', keyMasked: '••••（config/.env）', source: 'env' }
+          : null,
+      activeKind: deps.brain?.adapter?.constructor?.name === 'DirectApiBrainAdapter' ? 'direct-api' : 'zcode-agent',
+    });
+  });
+
+  app.put('/api/brain-config', (req, res) => {
+    const { provider, apiKey, model, baseUrl, thinking } = req.body || {};
+    const preset = BRAIN_PROVIDERS.find((p) => p.id === provider);
+    if (!preset && provider !== 'custom') return res.status(400).json({ error: 'E_BAD_REQUEST', message: '未知供应商' });
+    if (!String(apiKey || '').trim()) return res.status(400).json({ error: 'E_BAD_REQUEST', message: 'API Key 不能为空' });
+    if (!String(model || '').trim()) return res.status(400).json({ error: 'E_BAD_REQUEST', message: '模型名不能为空' });
+    if (provider === 'custom' && !String(baseUrl || '').trim()) return res.status(400).json({ error: 'E_BAD_REQUEST', message: '自定义供应商需要填写 Base URL' });
+    const cfg = {
+      provider: provider || 'custom',
+      apiKey: String(apiKey).trim(),
+      model: String(model).trim(),
+      baseUrl: String(baseUrl || '').trim(),
+      thinking: Boolean(thinking),
+    };
+    state?.setPref?.('brain.config', cfg, `设置页保存（${cfg.provider}/${cfg.model}）`);
+    // 热切换：直接替换 BrainService 的适配器，下一轮思考立即生效
+    deps.brain.adapter = new DirectApiBrainAdapter({
+      apiKey: cfg.apiKey, model: cfg.model, baseUrl: cfg.baseUrl || undefined,
+      protocol: preset?.protocol || 'anthropic', thinking: cfg.thinking,
+      timeoutMs: config.brain.timeoutMs, log,
+    });
+    log.info?.('大脑已热切换', { provider: cfg.provider, model: cfg.model });
+    res.json({ ok: true, activeKind: 'direct-api', model: cfg.model });
+  });
+
+  app.post('/api/brain-config/test', async (req, res) => {
+    const { provider, apiKey, model, baseUrl, thinking } = req.body || {};
+    if (!String(apiKey || '').trim()) return res.status(400).json({ error: 'E_BAD_REQUEST', message: 'API Key 不能为空' });
+    const preset = BRAIN_PROVIDERS.find((p) => p.id === provider);
+    const adapter = new DirectApiBrainAdapter({
+      apiKey: String(apiKey).trim(), model: String(model || '').trim(),
+      baseUrl: String(baseUrl || '').trim() || preset?.baseUrl,
+      protocol: preset?.protocol || 'anthropic', thinking: Boolean(thinking),
+      timeoutMs: 30000, log,
+    });
+    const r = await adapter.health();
+    res.json(r);
   });
 
   // ---------- GET /api/dj · DJ 主页卡片 ----------
