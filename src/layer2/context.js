@@ -179,6 +179,7 @@ export async function build(intent, opts = {}) {
     mood: intent.slots?.mood || null,
     intentName: intent.name,
     djLang: opts.djLang || 'zh',
+    greeting: opts.greeting || null,     // { segment, programName } 今日时段首次开口
   };
   return fragments;
 }
@@ -209,6 +210,15 @@ export function renderPrompt(f) {
     `### ⑤ INPUT`,
     fence('INPUT', f.input || '（本次为定时触发，无用户输入）'),
     ``,
+    ...(f.greeting ? [
+      `### ⭐ 今日首次开口（最高优先指令）`,
+      `现在是你今天「${f.greeting.segment}」时段的第一次播音。开场白（say）必须：`,
+      `① 先向听众问好并介绍你自己——你是 Valen，这位听众的私人 DJ；`,
+      `② 点出本次节目主题「${f.greeting.programName}」；`,
+      `③ 然后自然过渡到选曲。问候与选曲之间不许生硬，像电台开播一样流畅。`,
+      `本时段只此一次，之后正常播报，不再问候。`,
+      ``,
+    ] : []),
     `### ⑥ TRACE`,
     fence('TRACE', f.trace),
     ``,

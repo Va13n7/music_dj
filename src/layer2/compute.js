@@ -172,6 +172,7 @@ export class ComputeService {
     const now = new Date();
     const h = now.getHours();
     const slot = h < 5 ? 'late' : h < 11 ? 'morning' : h < 14 ? 'midday' : h < 18 ? 'afternoon' : h < 22 ? 'evening' : 'late';
+    const segZh = slot === 'morning' ? '早' : (slot === 'midday' || slot === 'afternoon') ? '中' : '晚';   // 开场白时段（早/中/晚各一次）
     const en = {
       morning: ['Slow Start', 'First Light', 'Wake-up Set', 'Fresh Air'],
       midday: ['Midday Drift', 'Noon Pause', 'Lunch FM'],
@@ -190,10 +191,17 @@ export class ComputeService {
     const pick = pool[Math.floor(Math.random() * pool.length)];
     if (this.cfg.djLang === 'en') {
       const wd = ['Sunday', 'Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday'][now.getDay()];
-      return { name: `${wd} ${pick}`, slot };
+      return { name: `${wd} ${pick}`, slot, segZh };
     }
     const wd = ['周日', '周一', '周二', '周三', '周四', '周五', '周六'][now.getDay()];
-    return { name: `${wd} · ${pick}`, slot };
+    return { name: `${wd} · ${pick}`, slot, segZh };
+  }
+
+  /** 今日该时段的开场白是否还没播过（早/中/晚各一次，跨天重置） */
+  _greetingDue(segZh) {
+    const d = new Date();
+    const key = `${d.getFullYear()}-${d.getMonth() + 1}-${d.getDate()}|${segZh}`;
+    return { due: this.deps.state?.getPref?.('greeting.lastKey') !== key, key };
   }
 
   // ---------- 单飞 + 优先级队列 ----------
@@ -242,11 +250,14 @@ export class ComputeService {
     try {
       // ① context 六片（搜索候选只在模糊点播时注入——情绪/闲聊路径省 2~5s）
       const c0 = Date.now();
+      const program = this._programName(intent);
+      const greeting = this._greetingDue(program.segZh);
       const fragments = await buildContext(intent, {
         knowledgeDir: this._kd(),
         state: this.deps.state,
         djLang: this.cfg.djLang,
         calendarText: this.deps.calendarText?.() || null,
+        greeting: greeting.due ? { segment: program.segZh, programName: program.name } : null,
         searchCandidates: intent.name === 'play_request'
           ? async (q) => {
               try { return await this.deps.music.official.search(q, { limit: 8 }); }
@@ -373,6 +384,12 @@ export class ComputeService {
       else if (queue.length) state = 'PLAYING';
       else state = 'IDLE';
 
+      // ⑤.5 今日时段开场白：真大脑成功播出后才标记「本时段已问候」
+      if (greeting.due && brainResult.meta.path !== 'fallback' && say.text && !say.skipped) {
+        this.deps.state?.setPref?.('greeting.lastKey', greeting.key);
+        this.log.info?.('今日时段开场白已播', { segment: program.segZh });
+      }
+
       // ⑥ 落库：messages(dj/user) + plays
       if (this.deps.state) {
         try {
@@ -398,7 +415,7 @@ export class ComputeService {
       const broadcast = {
         id: bid,
         sessionId: brainResult.raw.sessionId,
-        program: this._programName(intent),
+        program,
         intent: {
           name: intent.name, lane: intent.lane, source: intent.source, priority: intent.priority,
           text: intent.text || '', mood: intent.slots?.mood ?? null,
@@ -464,10 +481,18 @@ export class ComputeService {
       const r = await this.deps.music.resolve(`${(pick.artist || []).join('/')} - ${pick.name}`);
       if (!r?.url) return null;
       const track = this._trackEntry(r, `${(pick.artist || []).join('/')} - ${pick.name}`, 0);
+      // 精确点播也吃时段开场白：今日该时段首次开口 → 确认语升级为问候+自我介绍+主题
+      const program = this._programName(intent);
+      const greeting = this._greetingDue(program.segZh);
+      const lead = greeting.due
+        ? (this.cfg.djLang === 'en'
+            ? `Hey, I'm Valen, your personal DJ — tonight's theme is "${program.name}". `
+            : `你好，我是 Valen，你的私人 DJ，本期主题「${program.name}」。`)
+        : '';
       // 确认模板 say + TTS（并行无必要——这是唯一耗时项）
       const ackText = this.cfg.djLang === 'en'
-        ? `Found it. Playing ${r.track.name} by ${r.track.artist.join(', ')}.`
-        : `好，这就给你放〈${r.track.name}〉。`;
+        ? `${lead}Found it. Playing ${r.track.name} by ${r.track.artist.join(', ')}.`
+        : `${lead}好，这就给你放〈${r.track.name}〉。`;
       const say = {
         text: ackText, audioUrl: null, mime: null, durationMs: null, est: true,
         voice: this.cfg.tts.voice, engine: null, cached: false, skipped: false,
@@ -481,7 +506,7 @@ export class ComputeService {
       const state = say.skipped ? 'MUSIC_ONLY' : 'SPEAKING';
       const broadcast = {
         id: bid, sessionId: null,
-        program: this._programName(intent),
+        program,
         intent: { name: 'play_request', lane: 'music', source: intent.source, priority: intent.priority,
           text: intent.text || '', mood: null, moodCandidates: [], slot: null,
           confidence: intent.confidence, reason: intent.reason || '' },
@@ -505,6 +530,11 @@ export class ComputeService {
             broadcastId: bid, intent: intent.name, reason: `精确点播`, degraded: degraded.length > 0,
           });
         } catch { /* ignore */ }
+      }
+      // 确认语已带问候与自我介绍 → 标记本时段已问候（TTS 失败则不标，下轮补上）
+      if (greeting.due && !say.skipped) {
+        this.deps.state?.setPref?.('greeting.lastKey', greeting.key);
+        this.log.info?.('今日时段开场白已播（音乐车道）', { segment: program.segZh });
       }
       this.machine.tryTo(state);
       this.deps.onBroadcast?.(broadcast);

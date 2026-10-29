@@ -191,3 +191,42 @@ test('漫游：大脑批次经 24h 硬去重，红心兜底同样避重', async 
   assert.equal(r.tracks[0].spec, '罗大佑 - 光阴的故事');
   assert.equal(r.source, 'library');
 });
+
+test('开场白：每日时段首次播报注入问候，播后标记不重复', async () => {
+  const { svc, state } = makeCompute(makeDeps({
+    brainText: '{"say":"你好，我是 Valen，你的私人 DJ。","play":["朴树 - 平凡之路"],"intros":["b"],"reason":"r","segue":""}',
+  }));
+  // 首播前：greeting.lastKey 应不存在（首次开口触发）
+  assert.equal(state.getPref('greeting.lastKey'), undefined);
+  const b = await svc.handleUserChat('随便放点');
+  assert.equal(b.state, 'SPEAKING');
+  // 播后：greeting.lastKey 已标记为 今日|时段
+  const key = state.getPref('greeting.lastKey');
+  assert.ok(key, '播后应标记 greeting.lastKey');
+  assert.match(key, /^\d{4}-\d{1,2}-\d{1,2}\|(早|中|晚)$/);
+  // 重置大脑状态文件不影响：同时段第二次播报后标记不变（不重复问候）
+  const key2 = state.getPref('greeting.lastKey');
+  await svc.handleUserChat('再来点');
+  assert.equal(state.getPref('greeting.lastKey'), key2 ?? key);
+});
+
+test('漫游：大脑批次经 24h 硬去重，红心兜底同样避重', async () => {
+  const root = fs.mkdtempSync(path.join(os.tmpdir(), 'claudiao-roam-'));
+  fs.mkdirSync(path.join(root, 'knowledge', 'user', 'taste-imports'), { recursive: true });
+  fs.writeFileSync(path.join(root, 'knowledge', 'user', 'taste-imports', 'pl.json'),
+    JSON.stringify({ tracks: [{ id: '9003', artist: '罗大佑', title: '光阴的故事' }] }));
+  const deps = makeDeps({
+    brainText: '{"say":"s","play":["李志 - 下雨","朴树 - 平凡之路"],"intros":["a","b"],"reason":"r","segue":""}',
+  });
+  deps.cfg.root = root;
+  const { svc, state } = makeCompute(deps);
+  // 两首都在 24h 内播过 → 大脑批次应被滤光 → 红心兜底给光阴的故事
+  state.addPlay({ trackId: specId('李志 - 下雨'), source: 'netease', title: '下雨', artist: '李志', spec: '李志 - 下雨', atMs: Date.now() - 1800e3 });
+  state.addPlay({ trackId: specId('朴树 - 平凡之路'), source: 'netease', title: '平凡之路', artist: '朴树', spec: '朴树 - 平凡之路', atMs: Date.now() - 3600e3 });
+  svc.roaming.enabled = true;
+  const r = await svc.roamNext({ queueSpecs: [] });
+  assert.ok(r.queued);
+  assert.equal(r.tracks.length, 1);
+  assert.equal(r.tracks[0].spec, '罗大佑 - 光阴的故事');
+  assert.equal(r.source, 'library');
+});
