@@ -357,12 +357,15 @@
         if (m.type === 'control') handleControl(m.data?.action);
         if (m.type === 'queue-update') {
           if (m.data?.track && current) {
+            // 优先按曲目 id 匹配（漫游补口播的 WS 事件带的是服务端本地索引，不可直接用）
             const idx = m.data.index ?? current.queue.length;
-            if (current.queue[idx]) {
-              Object.assign(current.queue[idx], m.data.track);
-              if (idx === qIndex) {
-                renderTrack(current.queue[idx]);
-                const tt = current.queue[idx];
+            let hit = m.data.track.id ? current.queue.findIndex((x) => String(x.id) === String(m.data.track.id)) : -1;
+            if (hit < 0) hit = current.queue[idx] ? idx : -1;
+            if (hit >= 0) {
+              Object.assign(current.queue[hit], m.data.track);
+              if (hit === qIndex) {
+                renderTrack(current.queue[hit]);
+                const tt = current.queue[hit];
                 if (tt.intro?.audioUrl && !tt.intro._played && !voiceA.paused && !voiceA.src.includes(tt.intro.audioUrl)) {
                   if (!audio.paused) { tt.intro._played = true; speakOverMusic(tt.intro); }
                 }

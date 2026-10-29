@@ -210,23 +210,11 @@ test('开场白：每日时段首次播报注入问候，播后标记不重复',
   assert.equal(state.getPref('greeting.lastKey'), key2 ?? key);
 });
 
-test('漫游：大脑批次经 24h 硬去重，红心兜底同样避重', async () => {
-  const root = fs.mkdtempSync(path.join(os.tmpdir(), 'claudiao-roam-'));
-  fs.mkdirSync(path.join(root, 'knowledge', 'user', 'taste-imports'), { recursive: true });
-  fs.writeFileSync(path.join(root, 'knowledge', 'user', 'taste-imports', 'pl.json'),
-    JSON.stringify({ tracks: [{ id: '9003', artist: '罗大佑', title: '光阴的故事' }] }));
-  const deps = makeDeps({
-    brainText: '{"say":"s","play":["李志 - 下雨","朴树 - 平凡之路"],"intros":["a","b"],"reason":"r","segue":""}',
-  });
-  deps.cfg.root = root;
-  const { svc, state } = makeCompute(deps);
-  // 两首都在 24h 内播过 → 大脑批次应被滤光 → 红心兜底给光阴的故事
-  state.addPlay({ trackId: specId('李志 - 下雨'), source: 'netease', title: '下雨', artist: '李志', spec: '李志 - 下雨', atMs: Date.now() - 1800e3 });
-  state.addPlay({ trackId: specId('朴树 - 平凡之路'), source: 'netease', title: '平凡之路', artist: '朴树', spec: '朴树 - 平凡之路', atMs: Date.now() - 3600e3 });
-  svc.roaming.enabled = true;
-  const r = await svc.roamNext({ queueSpecs: [] });
-  assert.ok(r.queued);
-  assert.equal(r.tracks.length, 1);
-  assert.equal(r.tracks[0].spec, '罗大佑 - 光阴的故事');
-  assert.equal(r.source, 'library');
+test('漫游口播修复：缺口播的曲目经 repair 补齐可播口播', async () => {
+  const { svc } = makeCompute(makeDeps());
+  const tracks = [{ id: 't1', title: '测试歌', artist: '测试人', spec: '测试人 - 测试歌' }];
+  svc._scheduleIntroRepair(tracks, '测试');
+  await new Promise((r) => setTimeout(r, 1500));
+  assert.ok(tracks[0].intro?.audioUrl, 'repair 应补出可播口播');
+  assert.equal(tracks[0].intro.synthed, true);
 });

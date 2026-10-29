@@ -837,6 +837,7 @@ export class ComputeService {
       }
       if (tracks.length) {
         this._lastRoamSource = 'brain';
+        this._scheduleIntroRepair(tracks, '无限漫游续播');   // 大脑漏写/口播失败 → 逐首补齐
         this.log.info?.('漫游批次完成（大脑探索）', { added: tracks.length });
         return tracks;
       }
@@ -855,6 +856,7 @@ export class ComputeService {
         tracks.push(t);
       }
       this._lastRoamSource = 'library';
+      this._scheduleIntroRepair(tracks, '无限漫游续播');
       this.log.info?.('漫游批次完成（个人曲库）', { added: tracks.length });
       return tracks;
     } catch (e) {
