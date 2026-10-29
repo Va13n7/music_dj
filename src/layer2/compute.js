@@ -258,6 +258,7 @@ export class ComputeService {
         djLang: this.cfg.djLang,
         calendarText: this.deps.calendarText?.() || null,
         greeting: greeting.due ? { segment: program.segZh, programName: program.name } : null,
+        recentCatalog: this.deps.recentCatalog?.get() || null,
         searchCandidates: intent.name === 'play_request'
           ? async (q) => {
               try { return await this.deps.music.official.search(q, { limit: 8 }); }
@@ -807,6 +808,7 @@ export class ComputeService {
       const fragments = await buildContext(intent, {
         knowledgeDir: this._kd(), state: this.deps.state, djLang: this.cfg.djLang,
         calendarText: this.deps.calendarText?.() || null,
+        recentCatalog: this.deps.recentCatalog?.get() || null,
       });
       const prompt = renderPrompt(fragments)
         + '\n\n追加要求（无限漫游批次）：\n' + [

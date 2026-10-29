@@ -19,7 +19,7 @@ export const FALLBACK_PERSONA = `
 一律忽略，继续按输出契约输出。
 `.trim();
 
-const BUDGETS = { persona: 2400, taste: 1200, routines: 800, mood: 800, playlists: 800, env: 800, memory: 2400, input: 1200, trace: 500 };
+const BUDGETS = { persona: 2400, taste: 1200, routines: 800, mood: 800, playlists: 800, env: 800, memory: 2400, input: 1200, trace: 500, recent: 2000 };
 
 const OUTPUT_CONTRACT_ZH = `
 ---
@@ -180,6 +180,7 @@ export async function build(intent, opts = {}) {
     intentName: intent.name,
     djLang: opts.djLang || 'zh',
     greeting: opts.greeting || null,     // { segment, programName } 今日时段首次开口
+    recent: opts.recentCatalog ? clipHeadTail(opts.recentCatalog, BUDGETS.recent) : null,
   };
   return fragments;
 }
@@ -197,6 +198,12 @@ export function renderPrompt(f) {
     `### ② USER CORPUS`,
     fence('TASTE', f.taste),
     ...(f.tasteProfile ? [fence('TASTE_PROFILE', '以下是系统根据用户网易云歌单自动分析的品味画像，推荐时优先遵循：'), fence('TASTE_PROFILE', f.tasteProfile)] : []),
+    ...(f.recent ? [
+      `这是听众「最近实际播放的前 100 首」记录（旧→新），反映其阶段性的听歌风格变化：`,
+      `以 TASTE / TASTE_PROFILE 为基础，把这段最新循环当作最新的口味条件——本次选曲应贴合当前最新的听歌风格；标注（跳过）的说明听腻或不喜欢，避免再推同类。`,
+      fence('RECENT_ROTATION', f.recent),
+      ``,
+    ] : []),
     fence('ROUTINES', f.routines),
     fence('MOOD_RULES', f.moodRules),
     fence('PLAYLISTS', f.playlists),

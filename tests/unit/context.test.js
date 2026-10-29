@@ -10,6 +10,17 @@ import path from 'node:path';
 import { build as buildContext, renderPrompt } from '../../src/layer2/context.js';
 import { StateStore } from '../../src/layer2/state.js';
 
+test('RECENT_ROTATION 片段：最近播放目录注入提示词', async () => {
+  const fragments = await buildContext(
+    { name: 'freeform', text: '来点欧美风格的歌', slots: {}, source: 'user_chat' },
+    { state: null, recentCatalog: '（旧→新，共 2 首）\n- 方大同 - 春风吹\n- 周杰伦 - 晴天（跳过）' },
+  );
+  assert.ok(fragments.recent.includes('春风吹'), '目录文本应进入片段');
+  const prompt = renderPrompt(fragments);
+  assert.ok(prompt.includes('RECENT_ROTATION'), '提示词应有独立片段围栏');
+  assert.ok(prompt.includes('最新的听歌风格'), '应带推荐语义指令');
+});
+
 test('MEMORY 片：近 40 次播放含艺人 + 避重指令；输出契约含发散探索规则', async () => {
   const state = new StateStore(path.join(fs.mkdtempSync(path.join(os.tmpdir(), 'claudiao-ctx-')), 't.db'));
   for (let i = 0; i < 45; i++) {
