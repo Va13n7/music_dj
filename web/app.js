@@ -96,8 +96,8 @@
     b.classList.add('active');
     document.querySelectorAll('.view').forEach((v) => v.classList.remove('active'));
     $(b.dataset.view).classList.add('active');
-    if (b.dataset.view === 'view-profile') { loadTaste(); loadProfile(); refreshNetease(); }
-    if (b.dataset.view === 'view-settings') { refreshHealth(); refreshBrainConfig(); }
+    if (b.dataset.view === 'view-profile') { loadTaste(); }
+    if (b.dataset.view === 'view-settings') { refreshHealth(); refreshBrainConfig(); refreshNetease(); }
   }));
 
   // ---------- autoplay 解锁 ----------
@@ -830,12 +830,17 @@
         badge.textContent = '已登录';
         badge.style.color = 'var(--green)';
         $('neteaseQr').hidden = true; $('btnNeteaseLogin').hidden = true; $('btnNeteaseLogout').hidden = false;
-        $('neteaseMsg').textContent = '直链跟随你的账号权益（VIP 曲目可听）';
+        const user = $('neteaseUser');
+        user.hidden = false;
+        user.textContent = st.nickname ? `👤 ${st.nickname} — 已登录，曲库与权益跟随你的账号` : '✓ 已登录网易云，曲库与权益跟随你的账号';
+        $('neteaseMsg').textContent = '音乐直链跟随你的账号权益';
       } else {
         badge.textContent = '未登录';
         badge.style.color = '';
+        $('neteaseUser').hidden = true;
+        $('btnNeteaseLogin').hidden = false;
         $('btnNeteaseLogout').hidden = true;
-        $('neteaseMsg').textContent = st.installed === false ? '服务端缺 NeteaseCloudMusicApi 依赖' : '扫码登录后可解锁完整曲库与音质';
+        $('neteaseMsg').textContent = st.installed === false ? '服务端缺 NeteaseCloudMusicApi 依赖' : '点击「扫码登录」，用网易云 App 扫码即可';
       }
     } catch { /* ignore */ }
   }
@@ -867,68 +872,21 @@
     refreshNetease();
   });
 
-  // ---------- 歌单导入 → 品味画像 ----------
-  async function loadProfile() {
+  // ---------- 品味：从网易云账号自动生成（喜欢 + 听歌排行前 100） ----------
+  $('btnTasteRegen').addEventListener('click', async () => {
+    $('btnTasteRegen').disabled = true;
+    $('tasteMsg').textContent = '正在拉取网易云数据并由大脑生成品味…（约 30~60 秒，别关页面）';
     try {
-      const r = await fetch('/api/taste/profile');
+      const r = await fetch('/api/taste/auto-generate', { method: 'POST' });
       const j = await r.json();
-      const box = $('profileBox');
-      if (j.exists) {
-        box.value = j.content; box.style.display = 'block';
-        const gen = j.content.match(/生成于 ([^·*]+)/);
-        $('profileMeta').textContent = '已生成' + (gen ? ' · ' + gen[1].trim() : '');
-        $('btnProfileToggle').textContent = '收起';
+      if (r.ok && j.ok) {
+        $('tasteMsg').textContent = `✓ 已基于 ${j.liked} 首喜欢 + ${j.recorded} 首听歌排行生成——可编辑后点「应用生效」`;
+        await loadTaste();
       } else {
-        $('profileMeta').textContent = '尚未生成——导入歌单后点「生成品味画像」';
+        $('tasteMsg').textContent = `✗ ${j.message || '生成失败'}`;
       }
-    } catch { /* ignore */ }
-  }
-  $('btnProfileToggle').addEventListener('click', () => {
-    const box = $('profileBox');
-    box.style.display = box.style.display === 'none' ? 'block' : 'none';
-    $('btnProfileToggle').textContent = box.style.display === 'none' ? '展开' : '收起';
-  });
-
-  $('btnPlImport').addEventListener('click', async () => {
-    const ids = $('plIds').value.split(/[,，\s]+/).filter((x) => /^\d+$/.test(x));
-    if (!ids.length) { $('plMsg').textContent = '请填歌单 ID（纯数字，网页版歌单地址栏 id= 后的数字）；歌单需设为公开'; return; }
-    $('btnPlImport').disabled = true;
-    $('plMsg').textContent = '导入中…（每千首约 10 秒）';
-    $('plResult').hidden = false; $('plResult').innerHTML = '';
-    try {
-      const r = await fetch('/api/taste/import', {
-        method: 'POST', headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ ids }),
-      });
-      const j = await r.json();
-      for (const it of (j.imported || [])) {
-        const div = document.createElement('div');
-        div.textContent = it.ok ? `✓ ${it.name} · ${it.trackCount} 首` : `✗ ${it.id}：${it.error}`;
-        $('plResult').appendChild(div);
-      }
-      const okCount = (j.imported || []).filter((x) => x.ok).length;
-      $('plMsg').textContent = okCount ? `导入完成（${okCount} 个歌单）——可以点「生成品味画像」了` : '导入失败，见上方明细';
-    } catch { $('plMsg').textContent = '网络错误'; }
-    $('btnPlImport').disabled = false;
-  });
-
-  $('btnPlAnalyze').addEventListener('click', async () => {
-    $('btnPlAnalyze').disabled = true;
-    $('plMsg').textContent = '大脑分析中…（约 30~60 秒，别关页面）';
-    try {
-      const r = await fetch('/api/taste/analyze', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: '{}' });
-      const j = await r.json();
-      if (r.ok) {
-        $('plMsg').textContent = `品味画像已生成（${j.chars} 字符）——已生效，之后推荐都按画像来`;
-        const box = $('profileBox');
-        box.value = j.profile; box.style.display = 'block';
-        $('btnProfileToggle').textContent = '收起';
-        loadProfile();
-      } else {
-        $('plMsg').textContent = `失败：${j.message || r.status}`;
-      }
-    } catch { $('plMsg').textContent = '网络错误（分析耗时长，若超时请重试）'; }
-    $('btnPlAnalyze').disabled = false;
+    } catch { $('tasteMsg').textContent = '✗ 网络错误'; }
+    $('btnTasteRegen').disabled = false;
   });
 
   // ---------- Settings：大脑 API 接入 ----------
@@ -1123,6 +1081,24 @@
     } catch { /* ignore */ }
   }
   $('btnRefreshHealth').addEventListener('click', refreshHealth);
+
+  // ---------- 新手引导：未登录网易云 或 未接大脑 API 时提示 ----------
+  (async () => {
+    try {
+      const [netease, brainCfg] = await Promise.all([
+        fetch('/api/netease/status').then((r) => r.json()).catch(() => ({})),
+        fetch('/api/brain-config').then((r) => r.json()).catch(() => ({})),
+      ]);
+      const loggedIn = Boolean(netease.loggedIn);
+      const hasBrain = Boolean(brainCfg.current);
+      if (!loggedIn || !hasBrain) $('onboardModal').hidden = false;
+    } catch { /* ignore */ }
+  })();
+  $('btnOnboardGo').addEventListener('click', () => {
+    $('onboardModal').hidden = true;
+    document.querySelector('nav button[data-view="view-settings"]').click();
+  });
+  $('btnOnboardLater').addEventListener('click', () => { $('onboardModal').hidden = true; });
 
   connectWs();
   refreshNow();

@@ -274,6 +274,7 @@ td, th { text-align: left; padding: 7px 8px; border-bottom: 1px solid var(--line
 th { color: var(--dim); font-weight: normal; width: 40%; }
 code { background: var(--panel2); border-radius: 4px; padding: 0 5px; font-size: 12px; }
 #neteaseQr { width: 180px; height: 180px; border-radius: 10px; background: #fff; display: block; }
+#neteaseQr[hidden] { display: none; }
 
 /* ---------- 底部导航 ---------- */
 nav {
@@ -285,14 +286,15 @@ nav {
 nav button { flex: 1; background: none; border: none; color: var(--dim); padding: 12px; font-size: 13px; }
 nav button.active { color: var(--fg); font-weight: 600; }
 
-/* ---------- DJ 主页弹卡 ---------- */
-#djModal {
+/* ---------- DJ 主页弹卡 / 新手引导弹窗 ---------- */
+#djModal,
+#onboardModal {
   position: fixed; inset: 0; z-index: 60;
   background: color-mix(in srgb, var(--bg) 72%, transparent);
   backdrop-filter: blur(8px);
   display: flex; align-items: center; justify-content: center; padding: 20px;
 }
-#djModal[hidden] { display: none; }
+#djModal[hidden], #onboardModal[hidden] { display: none; }
 .djcard {
   position: relative; width: 380px; max-width: 94vw;
   background: var(--panel);

@@ -261,7 +261,53 @@ export function createServer(deps = {}) {
     fs.writeFileSync(file, content);
     const newHash = corpusHashFn().hash;
     deps.hub?.broadcast('state-change', { state: 'corpus_updated', sha1: newHash });
-    res.json({ sha1: newHash, unchanged: newHash === cur && content.length > 0 ? undefined : undefined, saved: true });
+    res.json({ sha1: newHash, saved: true });
+  });
+
+  // ---------- POST /api/taste/auto-generate · 从网易云账号自动生成品味 ----------
+  // 数据源：喜欢音乐（标记喜欢）+ 听歌排行前 100（播放次数）；由大脑总结成品味画像，
+  // 写入我的音乐品味（taste.md），用户可在品味页编辑后应用。
+  app.post('/api/taste/auto-generate', requireAuth, async (req, res) => {
+    const cs = deps.music?.cookieSrc;
+    if (!cs?.loggedIn) return res.status(400).json({ error: 'E_NOT_LOGGED_IN', message: '请先在设置页登录网易云账号' });
+    try {
+      const acc = await cs.userAccount();
+      if (!acc.userId) throw Object.assign(new Error('未能获取账号信息'), { code: 'E_NCM' });
+      const likeIds = await cs.likelist(acc.userId);
+      const likeSongs = likeIds.length ? await cs.songDetail(likeIds.slice(0, 300)) : [];
+      const record = (await cs.userRecord(acc.userId, 1)).slice(0, 100);
+
+      if (!likeSongs.length && !record.length) {
+        return res.status(400).json({ error: 'E_NO_DATA', message: '账号里没有可分析的数据（喜欢与听歌记录均为空）' });
+      }
+      const likeLines = likeSongs.map((s) => `- ${s.title} - ${s.artist}`).join('\n');
+      const recLines = record.map((s) => `- ${s.title} - ${s.artist}（播放 ${s.playCount} 次）`).join('\n');
+      const prompt = [
+        '你是一位音乐品味分析师。下面是一位听众的网易云音乐真实数据：',
+        '【第一部分：他标记为「喜欢」的歌曲】',
+        likeLines || '（无）',
+        '【第二部分：他的听歌排行前 100（播放次数越多 = 越常听）】',
+        recLines || '（无）',
+        '请基于以上数据，输出一份「音乐品味画像」（Markdown，600~1000 字），包含以下小节：',
+        '## 核心流派与子流派（按权重排序）',
+        '## 代表艺人（分档：绝对主力 / 常听 / 偶尔出现）',
+        '## 年代与语种分布',
+        '## 场景与情绪偏好',
+        '## 值得探索的相邻风格（3~5 条具体建议）',
+        '要求：具体、克制、引用数据里真实出现的艺人/流派，不要空话套话。只输出画像正文本身。',
+      ].join('\n');
+
+      const r = await deps.brainAdapter.compute(prompt, { timeoutMs: Math.max(config.brain.timeoutMs, 120000) });
+      const profile = (r.text || '').trim();
+      fs.writeFileSync(kd('user/taste.md'), profile);
+      const newHash = corpusHashFn().hash;
+      deps.hub?.broadcast('state-change', { state: 'corpus_updated', sha1: newHash });
+      log.info?.('品味画像已自动生成', { liked: likeSongs.length, recorded: record.length, chars: profile.length });
+      res.json({ ok: true, chars: profile.length, liked: likeSongs.length, recorded: record.length, nickname: acc.nickname || '', sha1: newHash });
+    } catch (e) {
+      log.warn?.('品味自动生成失败', { error: e.message });
+      res.status(500).json({ error: e.code || 'E_AUTO_TASTE', message: e.message });
+    }
   });
 
   // ---------- GET /api/plan/today ----------
@@ -344,11 +390,16 @@ export function createServer(deps = {}) {
     }
   });
   app.get('/api/netease/status', requireAuth, (req, res) => {
-    res.json({
+    const base = {
       loggedIn: deps.music.cookieSrc.loggedIn,
       needsLogin: deps.music.cookieSrc.needsLogin,
       installed: deps.music.cookieSrc.installed,
-    });
+    };
+    if (!base.loggedIn) return res.json(base);
+    // 已登录：附带账号信息（失败不影响登录态返回）
+    deps.music.cookieSrc.userAccount()
+      .then((acc) => res.json({ ...base, nickname: acc.nickname, avatarUrl: acc.avatarUrl, userId: acc.userId }))
+      .catch(() => res.json(base));
   });
   app.post('/api/netease/logout', requireAuth, (req, res) => {
     deps.music.cookieSrc.logout();

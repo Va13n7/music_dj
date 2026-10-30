@@ -198,4 +198,39 @@ export class NeteaseCookieProvider {
       fee: s.fee,
     }));
   }
+
+  /** 当前登录账号信息（昵称/头像/userId） */
+  async userAccount() {
+    const body = await this._call('user_account');
+    const p = body?.profile || {};
+    return { userId: p.userId ?? body?.account?.id ?? null, nickname: p.nickname || '', avatarUrl: p.avatarUrl || '' };
+  }
+
+  /** 「我喜欢」歌单的歌曲 id 列表（需登录） */
+  async likelist(uid) {
+    const body = await this._call('likelist', { uid });
+    return (body?.ids || []).map(String);
+  }
+
+  /** 批量歌曲详情（id 数组 → 名称/艺人） */
+  async songDetail(ids) {
+    const body = await this._call('song_detail', { ids: ids.join(',') });
+    return (body?.songs || []).map((s) => ({
+      title: s.name || '',
+      artist: (s.ar || []).map((a) => a.name).join('/'),
+      id: String(s.id ?? ''),
+    }));
+  }
+
+  /** 听歌排行（type 0=每周 / 1=所有时间；按播放次数排序，最多 1000） */
+  async userRecord(uid, type = 1) {
+    const body = await this._call('user_record', { uid, type });
+    const list = body?.allData || body?.weekData || [];
+    return list.map((r) => ({
+      title: r.song?.name || '',
+      artist: (r.song?.ar || []).map((a) => a.name).join('/'),
+      playCount: r.playCount ?? 0,
+      id: String(r.song?.id ?? ''),
+    }));
+  }
 }

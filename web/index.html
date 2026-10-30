@@ -99,39 +99,29 @@
   <section class="view" id="view-profile">
     <div class="card">
       <div class="card-head mono">MY TASTE <span class="badge mono" id="tasteSha">-</span></div>
+      <div class="reason" style="margin-bottom:10px">品味来源：网易云账号（喜欢 + 听歌排行前 100）自动生成，反映你近期的听歌风格；也可以手动编辑。编辑后点「应用生效」写入电台。</div>
+      <div class="row" style="margin-top:0;margin-bottom:10px">
+        <button class="primary" id="btnTasteRegen">从网易云生成品味</button>
+        <button class="pill" id="btnSaveTaste">应用生效</button>
+        <span id="tasteMsg" class="reason"></span>
+      </div>
       <textarea id="tasteEditor" spellcheck="false"></textarea>
-      <div class="row"><button class="primary" id="btnSaveTaste">保存语料</button><span id="tasteMsg" class="reason"></span></div>
-    </div>
-    <div class="card">
-      <div class="card-head mono">PLAYLIST IMPORT</div>
-      <div class="reason" style="margin-bottom:8px">把你的网易云歌单交给大脑分析，生成专属品味画像；之后所有推荐自动按你的口味来。<br>歌单 ID：网页版打开歌单，地址栏 <code>id=</code> 后面的数字。歌单需设为公开。</div>
-      <input type="text" id="plIds" placeholder="歌单 ID，多个用逗号隔开">
-      <div class="row">
-        <button class="primary" id="btnPlImport">导入歌单</button>
-        <button class="primary" id="btnPlAnalyze">生成品味画像</button>
-      </div>
-      <div class="reason" id="plMsg"></div>
-      <div id="plResult" class="chatlog" hidden></div>
-    </div>
-    <div class="card">
-      <div class="card-head mono">TASTE PROFILE <button class="pill" id="btnProfileToggle">展开</button></div>
-      <div id="profileMeta" class="reason" style="margin-bottom:6px">尚未生成——导入歌单后点「生成品味画像」</div>
-      <textarea id="profileBox" spellcheck="false" style="min-height:220px;display:none"></textarea>
-    </div>
-    <div class="card">
-      <div class="card-head mono">NETEASE ACCOUNT <span class="badge mono" id="neteaseState">检查中…</span></div>
-      <div class="reason" style="margin-bottom:8px">扫码登录你的网易云账号后，VIP 歌曲与完整曲库跟随你的账号权益；听歌记录与歌单自动同步。</div>
-      <img id="neteaseQr" alt="网易云音乐登录二维码" hidden>
-      <div class="row">
-        <button class="primary" id="btnNeteaseLogin" hidden>刷新二维码</button>
-        <button class="pill" id="btnNeteaseLogout" hidden>退出登录</button>
-        <span class="reason" id="neteaseMsg"></span>
-      </div>
     </div>
   </section>
 
   <!-- ================= 设置 ================= -->
   <section class="view" id="view-settings">
+    <div class="card">
+      <div class="card-head mono">NETEASE ACCOUNT <span class="badge mono" id="neteaseState">检查中…</span></div>
+      <div class="reason" style="margin-bottom:8px">扫码登录网易云账号：曲库与权益跟随你的账号，品味的自动生成也依赖它。二维码只在未登录时出现。</div>
+      <div class="reason" id="neteaseUser" style="margin-bottom:8px" hidden></div>
+      <img id="neteaseQr" alt="网易云登录二维码" hidden>
+      <div class="row">
+        <button class="primary" id="btnNeteaseLogin" hidden>扫码登录</button>
+        <button class="pill" id="btnNeteaseLogout" hidden>退出登录</button>
+        <span class="reason" id="neteaseMsg"></span>
+      </div>
+    </div>
     <div class="card">
       <div class="card-head mono">BRAIN API <span class="badge mono" id="brainActive">-</span></div>
       <div class="reason" style="margin-bottom:10px">选择模型供应商并填入对应 API Key，保存后立即生效（无需重启）。Key 只存在本机数据库，不会上传。</div>
@@ -193,6 +183,44 @@
     </div>
     <div class="dj-genres" id="djGenres"></div>
     <div class="dj-foot mono">CLAUDIAO × YOU</div>
+  </div>
+</div>
+
+<div id="djModal" hidden>
+  <div class="djcard">
+    <button class="djclose" id="btnDjClose" aria-label="关闭">×</button>
+    <div class="dj-head">
+      <div class="dj-avatar">🎧</div>
+      <div class="dj-headmeta">
+        <div class="dj-name mono">VALEN</div>
+        <div class="dj-tag" id="djTagline">加载中…</div>
+      </div>
+    </div>
+    <div class="dj-bio" id="djBio"></div>
+    <div class="dj-stats mono">
+      <div><b>24/7</b><span>ON AIR</span></div>
+      <div><b>∞</b><span>GENRES</span></div>
+      <div><b>1</b><span>LISTENER</span></div>
+    </div>
+    <div class="dj-genres" id="djGenres"></div>
+    <div class="dj-foot mono">CLAUDIAO × YOU</div>
+  </div>
+</div>
+
+<div id="onboardModal" hidden>
+  <div class="djcard">
+    <div class="dj-head">
+      <div class="dj-avatar">🎧</div>
+      <div class="dj-headmeta">
+        <div class="dj-name mono">欢迎来到 Claudiao</div>
+        <div class="dj-tag">还差两步，Valen 就能开唱</div>
+      </div>
+    </div>
+    <div class="dj-bio">① 在「设置」里扫码登录你的网易云账号——这是音乐来源，品味也由它自动生成；<br>② 接入一个 API Key（智谱 / DeepSeek / Kimi 等）——这是 Valen 的大脑。</div>
+    <div class="row" style="justify-content:center">
+      <button class="primary" id="btnOnboardGo">去完成接入</button>
+      <button class="pill" id="btnOnboardLater">稍后再说</button>
+    </div>
   </div>
 </div>
 
