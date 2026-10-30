@@ -11,6 +11,7 @@ import fs from 'node:fs';
 import path from 'node:path';
 
 const SCRIPT = `
+Add-Type -AssemblyName System.Speech
 $text = [Console]::In.ReadToEnd()
 $s = New-Object System.Speech.Synthesis.SpeechSynthesizer
 $s.SelectVoice('__VOICE__')
