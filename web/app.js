@@ -290,6 +290,17 @@
     userPaused = false;
     $('state').textContent = phase === 'say' ? 'SPEAKING' : 'PLAYING';
     setPlayBtn(true);
+    // 暂停期间到达的新播报：恢复后优先起播它
+    if (pausedPending) {
+      const b = pausedPending; pausedPending = null;
+      current = b; qIndex = 0; phase = b.say?.audioUrl ? 'say' : 'track';
+      favOn = false; $('btnFav').classList.remove('on');
+      renderTrack(b.queue?.[qIndex] || b.queue?.[0]);
+      renderQueue();
+      if (b.say?.audioUrl && !b.say.skipped) speakSolo(b.say.audioUrl, b.say.text || '', () => { phase = 'track'; startQueue(b); });
+      else startQueue(b);
+      return;
+    }
     if (pendingAdvance) { pendingAdvance = false; playCurrentIndex(); return; }
     if (holdSay) { const s = holdSay; holdSay = null; speakSolo(s.url, s.text, s.onEnded); return; }
     if (phase === 'say') {
@@ -431,8 +442,11 @@
     addChat('dj', b.say?.text || '', { audioUrl: b.say?.audioUrl });
     // 自动起播仅限「新播报且还新鲜」：页面刷新拉回的几小时前旧播报只渲染界面，
     // 不重放——旧播报的歌曲直链多半已过期，重放就是"DJ 说完没歌声"。
-    const fresh = !b.at || (Date.now() - new Date(b.at).getTime()) < 5 * 60000;
-    if (!sameId && (fresh || restart)) {
+  let pausedPending = null;              // 暂停期间到达的新播报：挂起，恢复播放键一按即播
+  const fresh = !b.at || (Date.now() - new Date(b.at).getTime()) < 5 * 60000;
+  if (!sameId && userPaused) {
+    pausedPending = b;                                            // 暂停中收到新播报：只渲染不响，恢复即播
+  } else if (!sameId && (fresh || restart)) {
       if (b.say?.audioUrl && !b.say.skipped) {
         speakSolo(b.say.audioUrl, b.say.text || '', () => { phase = 'track'; startQueue(b); });
       } else startQueue(b);
@@ -637,11 +651,11 @@
   $('btnSkip').addEventListener('click', doNext);
   $('btnPrev').addEventListener('click', () => { if (qIndex > 0) { clearHold(); qIndex--; playCurrentIndex(); } else resumePlayback(); });
 
-  // 暂停/播放按钮：以实际播放状态为准（含自动播放被拦后的单击恢复）
+  // 暂停/播放按钮：口播中暂停要停人声、挂起新播报；仅 userPaused/口播被拦时才恢复
   function setPlayBtn(playing) { $('btnPlayPause').textContent = playing ? '⏸' : '▶'; }
   $('btnPlayPause').addEventListener('click', () => {
     const saySuspended = phase === 'say' && voiceA.paused && !voiceA.ended && voiceA.src && !voiceA.src.startsWith('data:');
-    if (userPaused || audio.paused || saySuspended) resumePlayback();
+    if (userPaused || saySuspended) resumePlayback();
     else pausePlayback();
   });
   audio.addEventListener('play', () => setPlayBtn(true));

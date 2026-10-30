@@ -78,7 +78,7 @@ observability:
   # 健康检查端点 /api/health 是否暴露细节（brain/tts/music 各自可用性）
   healthDetail: true
   # 每日总结写回 state.db 的时间
-  dailySummaryAt: "23:50"
+  dailySummaryAt: "19:50"
 
 # ------------------------------------------------------------
 # 安全

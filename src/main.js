@@ -20,6 +20,7 @@ import { ComputeService } from './layer2/compute.js';
 import { Scheduler } from './layer2/scheduler.js';
 import { Planner } from './layer2/planner.js';
 import { RecentCatalog } from './layer2/recent-catalog.js';
+import { RecommendMemory } from './layer2/recommend-memory.js';
 import { CalendarProvider } from './providers/calendar.js';
 import { createServer } from './server.js';
 
@@ -87,10 +88,12 @@ const calendar = new CalendarProvider({ calendarYml: config.calendar, config, st
 // 最近播放目录（前 100 首）：启动时生成一次，服务长跑时每天首次访问自动重算
 const recentCatalog = new RecentCatalog({ state, log });
 recentCatalog.refresh();
+// 推荐记忆：近三日推荐过的曲目不重复（本地文件，零 token 成本）
+const recommendMemory = new RecommendMemory({ root: config.root, log });
 
 let hubRef = null;
 const compute = new ComputeService({
-  config, brain, music, tts, state, log, recentCatalog,
+  config, brain, music, tts, state, log, recentCatalog, recommendMemory,
   calendarText: () => calendar.injectionText(),
   onBroadcast: (b) => hubRef?.broadcast('now-playing', b),
   onControl: (action) => hubRef?.broadcast('control', { action }),

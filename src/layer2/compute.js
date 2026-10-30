@@ -376,6 +376,11 @@ export class ComputeService {
         this._scheduleIntroRepair(queue, intent.text || '定时播报');
       }
 
+      // ③.6 推荐记忆：本批推荐的全部曲目写入近三日不重复记忆（本地文件，零 token 成本）
+      if (queue.length) {
+        this.deps.recentMemory?.record(queue.map((t) => `${t.artist} - ${t.title}`));
+      }
+
       // ⑤ 状态裁决
       let state;
       if (fallbackAudio) state = 'FALLBACK_AUDIO';
@@ -434,6 +439,12 @@ export class ComputeService {
         at: new Date().toISOString(),
       };
       this._nowPlaying = broadcast;
+      // 记住用户最近的点歌意图（艺人聚焦），漫游续批沿这个方向
+      if (intent.text && queue.length) {
+        this.lastUserMusicIntent = { text: intent.text, artists: [...new Set(queue.map((t) => t.artist).filter(Boolean))], at: Date.now() };
+      } else if (intent.text) {
+        this.lastUserMusicIntent = { text: intent.text, artists: [], at: Date.now() };
+      }
       this.machine.tryTo(state);
       this.deps.onBroadcast?.(broadcast);
       return broadcast;
@@ -520,6 +531,11 @@ export class ComputeService {
         at: new Date().toISOString(),
       };
       this._nowPlaying = broadcast;
+      // 精确点播也记入推荐记忆与点歌意图（漫游续批沿这个方向）
+      this.deps.recentMemory?.record([`${(r.track.artist || []).join('/')} - ${r.track.name}`]);
+      if (intent.text && intent.slots?.artist) {
+        this.lastUserMusicIntent = { text: intent.text, artists: [(r.track.artist || [])[0] || intent.slots.artist].filter(Boolean), at: Date.now() };
+      }
       if (this.deps.state) {
         try {
           this.deps.state.addMessage({ role: 'user', text: intent.text, intent: intent.name });
@@ -659,6 +675,8 @@ export class ComputeService {
    */
   _filterRepeats(play, intros = [], userText = '', extraDrops = []) {
     const { keys, titles, ids } = this._playedKeys24h();
+    // 推荐记忆（近三日推荐过的）并入阻断集——本地 Set 查询，零额外成本
+    for (const k of this.deps.recentMemory?.recentKeys?.() || []) keys.add(k);
     const said = normText(userText);
     const kept = [], keptIntros = [], dropped = [], exempt = new Set();
     (Array.isArray(play) ? play : []).forEach((spec, i) => {
@@ -772,6 +790,8 @@ export class ComputeService {
   async _roamBatch(queueSpecs = [], recentSpecs = []) {
     this._lastRoamSource = 'library';
     const pk = this._playedKeys24h();
+    // 推荐记忆（近三日推荐过的）并入阻断键
+    for (const k of this.deps.recentMemory?.recentKeys?.() || []) pk.keys.add(k);
     const avoid = [...new Set([...queueSpecs, ...recentSpecs])];
     // 服务端自查 24h 播过清单，喂给大脑当避重名单（不依赖客户端上报）
     const dbRecent = (this.deps.state?.recentPlays?.(30) || [])
@@ -787,6 +807,17 @@ export class ComputeService {
       text: '（无限漫游：结合品味画像与最近播放，推几首同气质的歌。只输出 JSON。）',
       slots: {}, confidence: 1, at: new Date().toISOString(), reason: '无限漫游批次',
     };
+
+    // 焦点延续：用户最近的点歌意图（艺人/方向）注入漫游批次，避免「点了 The Weeknd 却续出别人」
+    const focus = this.lastUserMusicIntent && Date.now() - (this.lastUserMusicIntent.at || 0) < 6 * 3600e3
+      ? this.lastUserMusicIntent
+      : null;
+    const focusArtists = focus?.artists?.length ? focus.artists : [];
+    const focusBlock = focus?.text
+      ? `\n\n【延续听众刚才的要求（最高优先）】他刚说：「${focus.text}」。本批选曲必须延续这个方向：` +
+        (focusArtists.length ? `优先推 ${focusArtists.join(' / ')} 的歌以及同流派、相近气质的艺人（同一艺人可以多首）；` : '保持同样的风格与语种；') +
+        '不要跳回别的风格、别的语种或别的艺人。'
+      : '';
 
     const tracks = [];
     const tryResolve = async (spec) => {
@@ -814,9 +845,11 @@ export class ComputeService {
         + '\n\n追加要求（无限漫游批次）：\n' + [
           'play 给 3 首，intros 逐首覆盖，say 给 15 字内的极简串场（不朗读）。',
           '至少 2 首是用户歌单里**没有**的同风格歌曲——按 TASTE_PROFILE 的流派权重探索相似艺人/相似气质的新歌，不要复读歌单。',
-          '同一位艺人最多 1 首；知名度一般的佳作优先于最著名的代表作。',
+          focusBlock
+            ? '听众刚才有明确的点歌方向（见上方【延续】），优先满足它，同一位艺人可以多首。'
+            : '同一位艺人最多 1 首；知名度一般的佳作优先于最著名的代表作。',
           '避开上面【已推送过】的曲目。',
-        ].map((s) => '- ' + s).join('\n') + avoidBlock;
+        ].map((s) => '- ' + s).join('\n') + avoidBlock + focusBlock;
       const brainResult = await this.deps.brain.compute(prompt, {});
       const action = brainResult.action;
       // 大脑不听话也要拦：24h 播过 + 本批 avoid 一起硬过滤
@@ -839,6 +872,7 @@ export class ComputeService {
       }
       if (tracks.length) {
         this._lastRoamSource = 'brain';
+        this.deps.recentMemory?.record(tracks.map((t) => `${t.artist} - ${t.title}`));
         this._scheduleIntroRepair(tracks, '无限漫游续播');   // 大脑漏写/口播失败 → 逐首补齐
         this.log.info?.('漫游批次完成（大脑探索）', { added: tracks.length });
         return tracks;
@@ -858,6 +892,7 @@ export class ComputeService {
         tracks.push(t);
       }
       this._lastRoamSource = 'library';
+      this.deps.recentMemory?.record(tracks.map((t) => `${t.artist} - ${t.title}`));
       this._scheduleIntroRepair(tracks, '无限漫游续播');
       this.log.info?.('漫游批次完成（个人曲库）', { added: tracks.length });
       return tracks;
