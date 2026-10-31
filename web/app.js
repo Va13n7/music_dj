@@ -12,6 +12,19 @@
   let introTimer = null;
   let fadeTimer = null;
   const esc = (s) => String(s ?? '').replace(/[&<>"]/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[c]));
+
+  /** 全局 toast 提示：toast('已保存') / toast('失败原因', 'err')，2.6s 后自动淡出 */
+  function toast(msg, kind = 'ok') {
+    let box = $('toastBox');
+    if (!box) { box = document.createElement('div'); box.id = 'toastBox'; document.body.appendChild(box); }
+    const t = document.createElement('div');
+    t.className = 'toast ' + kind;
+    t.textContent = msg;
+    box.appendChild(t);
+    while (box.children.length > 3) box.firstChild.remove();
+    setTimeout(() => t.classList.add('out'), 2600);
+    setTimeout(() => t.remove(), 3050);
+  }
   const fmtT = (s) => { s = Math.max(0, Math.floor(s || 0)); return `${Math.floor(s / 60)}:${String(s % 60).padStart(2, '0')}`; };
   const nowHM = () => { const d = new Date(); return `${String(d.getHours()).padStart(2, '0')}:${String(d.getMinutes()).padStart(2, '0')}`; };
 
@@ -981,8 +994,9 @@
       });
       const j = await r.json();
       $('tasteMsg').textContent = r.ok ? '已保存并同步大脑，下一轮对话起生效' : `失败：${j.message || r.status}`;
-      if (r.ok) tasteBase = j.sha1;
-    } catch { $('tasteMsg').textContent = '网络错误'; }
+      if (r.ok) { tasteBase = j.sha1; toast('品味已生效，Valen 下一轮就知道啦'); }
+      else toast(`保存失败：${j.message || r.status}`, 'err');
+    } catch { $('tasteMsg').textContent = '网络错误'; toast('保存失败：网络错误', 'err'); }
     $('btnSaveTaste').disabled = false;
   });
 
@@ -1047,11 +1061,13 @@
       const j = await r.json();
       if (r.ok && j.ok) {
         $('tasteMsg').textContent = `✓ 已基于 ${j.liked} 首喜欢 + ${j.recorded} 首听歌排行生成——可编辑后点「应用生效」`;
+        toast(`品味已生成：${j.liked} 首喜欢 + ${j.recorded} 首听歌排行`);
         await loadTaste();
       } else {
         $('tasteMsg').textContent = `✗ ${j.message || '生成失败'}`;
+        toast(`生成失败：${j.message || '未知错误'}`, 'err');
       }
-    } catch { $('tasteMsg').textContent = '✗ 网络错误'; }
+    } catch { $('tasteMsg').textContent = '✗ 网络错误'; toast('生成失败：网络错误', 'err'); }
     $('btnTasteRegen').disabled = false;
   });
 

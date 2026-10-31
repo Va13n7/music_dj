@@ -225,6 +225,24 @@ main { flex: 1; width: 100%; max-width: 600px; margin: 0 auto; padding: 18px 14p
 .tsec-add { width: 100%; margin: 4px 0 8px; }
 .tsec-extra { margin-top: 9px; min-height: 0 !important; font-size: 12px; color: var(--dim); }
 
+/* ---------- Toast ---------- */
+#toastBox {
+  position: fixed; left: 50%; bottom: 66px; transform: translateX(-50%);
+  display: flex; flex-direction: column; align-items: center; gap: 8px;
+  z-index: 90; pointer-events: none;
+}
+.toast {
+  background: color-mix(in srgb, var(--panel) 94%, transparent);
+  border: 1px solid var(--green); color: var(--fg);
+  border-radius: 999px; padding: 9px 18px; font-size: 13px;
+  box-shadow: 0 6px 24px rgba(0, 0, 0, 0.35);
+  animation: toastIn 0.22s ease-out;
+  max-width: 78vw; white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
+}
+.toast.err { border-color: #e05a5a; }
+.toast.out { opacity: 0; transform: translateY(6px); transition: opacity 0.4s, transform 0.4s; }
+@keyframes toastIn { from { opacity: 0; transform: translateY(10px); } to { opacity: 1; transform: translateY(0); } }
+
 /* ---------- 队列 ---------- */
 #queueList { list-style: none; display: flex; flex-direction: column; max-height: 226px; overflow-y: auto; }
 #queueList, .transcript, .chatlog { scrollbar-width: thin; scrollbar-color: var(--line2) transparent; }
