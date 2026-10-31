@@ -21,6 +21,7 @@ import { Scheduler } from './layer2/scheduler.js';
 import { Planner } from './layer2/planner.js';
 import { RecentCatalog } from './layer2/recent-catalog.js';
 import { RecommendMemory } from './layer2/recommend-memory.js';
+import { ChatMemory } from './layer2/chat-memory.js';
 import { CalendarProvider } from './providers/calendar.js';
 import { createServer } from './server.js';
 
@@ -90,10 +91,12 @@ const recentCatalog = new RecentCatalog({ state, log });
 recentCatalog.refresh();
 // 推荐记忆：近三日推荐过的曲目不重复（本地文件，零 token 成本）
 const recommendMemory = new RecommendMemory({ root: config.root, log });
+// 对话记忆：近三日聊天存本地 JSON 文档，注入 CHAT_LOG 让闲聊接得上前文
+const chatMemory = new ChatMemory({ root: config.root, log });
 
 let hubRef = null;
 const compute = new ComputeService({
-  config, brain, music, tts, state, log, recentCatalog, recommendMemory,
+  config, brain, music, tts, state, log, recentCatalog, recommendMemory, chatMemory,
   calendarText: () => calendar.injectionText(),
   onBroadcast: (b) => hubRef?.broadcast('now-playing', b),
   onControl: (action) => hubRef?.broadcast('control', { action }),

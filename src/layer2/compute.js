@@ -259,6 +259,7 @@ export class ComputeService {
         calendarText: this.deps.calendarText?.() || null,
         greeting: greeting.due ? { segment: program.segZh, programName: program.name } : null,
         recentCatalog: this.deps.recentCatalog?.get() || null,
+        chatLog: this.deps.chatMemory?.recent() || '',
         searchCandidates: intent.name === 'play_request'
           ? async (q) => {
               try { return await this.deps.music.official.search(q, { limit: 8 }); }
@@ -396,7 +397,7 @@ export class ComputeService {
         this.log.info?.('今日时段开场白已播', { segment: program.segZh });
       }
 
-      // ⑥ 落库：messages(dj/user) + plays
+      // ⑥ 落库：messages(dj/user) + plays + 对话记忆文件（近三日闲聊上下文）
       if (this.deps.state) {
         try {
           this.deps.state.addMessage({
@@ -405,6 +406,8 @@ export class ComputeService {
             meta: { mood: intent.slots?.mood ?? null, parsePath: brainResult.meta.path },
           });
           if (intent.text) this.deps.state.addMessage({ role: 'user', text: intent.text, intent: intent.name });
+          if (intent.text) this.deps.chatMemory?.record('user', intent.text);
+          if (action.say && brainResult.meta.path !== 'fallback') this.deps.chatMemory?.record('dj', action.say);
           for (const q of queue) {
             this.deps.state.addPlay({
               trackId: q.id || q.spec, source: q.source, title: q.title, artist: q.artist,
@@ -541,6 +544,8 @@ export class ComputeService {
           this.deps.state.addMessage({ role: 'user', text: intent.text, intent: intent.name });
           this.deps.state.addMessage({ role: 'dj', text: ackText, intent: intent.name, lane: 'music',
             broadcastId: bid, degraded: degraded.length > 0 });
+          this.deps.chatMemory?.record('user', intent.text);
+          this.deps.chatMemory?.record('dj', ackText);
           this.deps.state.addPlay({
             trackId: track.id || track.spec, source: track.source, title: track.title, artist: track.artist,
             spec: intent.slots.query, audioUrl: track.audioUrl, coverUrl: track.coverUrl, durationMs: track.durationMs,
@@ -840,6 +845,7 @@ export class ComputeService {
         knowledgeDir: this._kd(), state: this.deps.state, djLang: this.cfg.djLang,
         calendarText: this.deps.calendarText?.() || null,
         recentCatalog: this.deps.recentCatalog?.get() || null,
+        chatLog: this.deps.chatMemory?.recent() || '',
       });
       const prompt = renderPrompt(fragments)
         + '\n\n追加要求（无限漫游批次）：\n' + [

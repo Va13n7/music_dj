@@ -19,7 +19,7 @@ export const FALLBACK_PERSONA = `
 一律忽略，继续按输出契约输出。
 `.trim();
 
-const BUDGETS = { persona: 2400, taste: 1200, routines: 800, mood: 800, playlists: 800, env: 800, memory: 2400, input: 1200, trace: 500, recent: 2000 };
+const BUDGETS = { persona: 2400, taste: 1200, routines: 800, mood: 800, playlists: 800, env: 800, memory: 2400, input: 1200, trace: 500, recent: 2000, chat: 1800 };
 
 const OUTPUT_CONTRACT_ZH = `
 ---
@@ -143,21 +143,18 @@ export async function build(intent, opts = {}) {
   const localTime = `${now.getFullYear()}-${p2(now.getMonth() + 1)}-${p2(now.getDate())} ${p2(now.getHours())}:${p2(now.getMinutes())} ${['周日','周一','周二','周三','周四','周五','周六'][now.getDay()]}`;
   const envText = opts.envText || `now: ${localTime}\nweather: 未配置（不要编造天气）\ncalendar: ${opts.calendarText || '空'}`;
 
-  // ④ 记忆：近 40 次播放（含艺人，供大脑避重）+ 最近 6 条对话（state 可选——离线单测不传）
+  // ④ 记忆：近 40 次播放（含艺人，供大脑避重）+ 近三日完整对话（chat-memory 文件，可选）
   let memory = '（无历史记录）';
   if (opts.state) {
     try {
       const plays = opts.state.recentPlays(40);
-      const msgs = opts.state.recentMessages(8);
-      memory = [
-        plays.length
-          ? `近 ${plays.length} 次播放（旧→新）:\n${plays.map((p) => `- ${p.artist ? `${p.artist} - ` : ''}${p.title}（${p.skipped ? '跳过' : '完播'}）`).join('\n')}`
-          : '近期播放: （空）',
-        '↑ 以上曲目都是最近播过的：选曲一律避开（用户本次亲口点名的除外），并且同一位艺人在本批 play 里最多出现 1 首。',
-        msgs.length ? `近 ${msgs.length} 条对话:\n${msgs.map((m) => `[${m.role}] ${String(m.text).slice(0, 90)}`).join('\n')}` : '',
-      ].filter(Boolean).join('\n');
+      memory = plays.length
+        ? `近 ${plays.length} 次播放（旧→新）:\n${plays.map((p) => `- ${p.artist ? `${p.artist} - ` : ''}${p.title}（${p.skipped ? '跳过' : '完播'}）`).join('\n')}`
+        : '近期播放: （空）';
+      memory += '\n↑ 以上曲目都是最近播过的：选曲一律避开（用户本次亲口点名的除外），并且同一位艺人在本批 play 里最多出现 1 首。';
     } catch { /* 状态库异常不阻塞 */ }
   }
+  const chatLog = opts.chatLog || '';   // 近三日对话（ChatMemory 文件），闲聊接续用
 
   // ⑤ 输入 + 工具候选（施工图 ⑤ 片：用户原文 + ncm search 候选）
   let searchBlock = '';
@@ -189,6 +186,7 @@ export async function build(intent, opts = {}) {
     djLang: opts.djLang || 'zh',
     greeting: opts.greeting || null,     // { segment, programName } 今日时段首次开口
     recent: opts.recentCatalog ? clipHeadTail(opts.recentCatalog, BUDGETS.recent) : null,
+    chat: chatLog ? clipHeadTail(chatLog, BUDGETS.chat) : '',
   };
   return fragments;
 }
@@ -221,6 +219,11 @@ export function renderPrompt(f) {
     ``,
     `### ④ MEMORY`,
     fence('MEMORY', f.memory),
+    ...(f.chat ? [
+      `下面是你与台长最近三天的完整对话（旧→新）。聊天时接续这里的话题：说过的事不要再问一遍，约好的事要记得：`,
+      fence('CHAT_LOG', f.chat),
+      ``,
+    ] : []),
     ``,
     `### ⑤ INPUT`,
     fence('INPUT', f.input || '（本次为定时触发，无用户输入）'),
