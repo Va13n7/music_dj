@@ -15,6 +15,36 @@ import { BRAIN_PROVIDERS, DirectApiBrainAdapter, listProviderModels } from './ad
 
 const STATIC_ALLOWLIST = new Set(['.html', '.js', '.css', '.json', '.webmanifest', '.png', '.jpg', '.jpeg', '.svg', '.ico', '.webp', '.mp3', '.wav']);
 
+/** 从 markdown 里提取指定 ## 小节的原文（含标题行）；品味自动生成时用于保留个人化小节 */
+function extractSection(md, titlePrefix) {
+  const lines = String(md || '').split(/\r?\n/);
+  const out = [];
+  let on = false;
+  for (const ln of lines) {
+    const h = ln.match(/^##\s+(.*)$/);
+    if (h) on = h[1].trim().startsWith(titlePrefix);
+    if (on) out.push(ln);
+  }
+  const text = out.join('\n').trim();
+  // 只有标题没有条目的小节不算有内容
+  return /^##/.test(text) && text.replace(/^##.*$/m, '').trim() ? text : '';
+}
+
+/** 自动生成品味后，把旧文件里的「私人避让」「给 DJ 的一句话」等主观小节合并回新画像 */
+function keepPersonalSections(oldMd, newMd) {
+  const KEEP = ['私人避让', '给 DJ 的一句话'];
+  const sections = newMd.split(/\r?\n(?=##\s)/);
+  for (const title of KEEP) {
+    const saved = extractSection(oldMd, title);
+    if (!saved) continue;
+    const idx = sections.findIndex((s) => /^##\s/.test(s) && s.replace(/^##\s*/, '').split(/\r?\n/)[0].trim().startsWith(title));
+    if (idx >= 0 && sections[idx].replace(/^##.*$/m, '').trim()) continue;   // 新画像已填写，不覆盖
+    if (idx >= 0) sections[idx] = saved;
+    else sections.push(saved);
+  }
+  return sections.join('\n').trim() + '\n';
+}
+
 export function createServer(deps = {}) {
   const { config, compute, state, corpusHashFn } = deps;
   const log = (deps.log?.child?.('http')) ?? deps.log ?? console;
@@ -288,17 +318,24 @@ export function createServer(deps = {}) {
         likeLines || '（无）',
         '【第二部分：他的听歌排行前 100（播放次数越多 = 越常听）】',
         recLines || '（无）',
-        '请基于以上数据，输出一份「音乐品味画像」（Markdown，600~1000 字），包含以下小节：',
-        '## 核心流派与子流派（按权重排序）',
-        '## 代表艺人（分档：绝对主力 / 常听 / 偶尔出现）',
-        '## 年代与语种分布',
-        '## 场景与情绪偏好',
-        '## 值得探索的相邻风格（3~5 条具体建议）',
-        '要求：具体、克制、引用数据里真实出现的艺人/流派，不要空话套话。只输出画像正文本身。',
+        '请基于以上数据，输出一份「音乐品味画像」。输出格式必须严格遵守：',
+        '- 只输出以下 8 个小节，小节标题（## 开头）逐字保留，不要增删改名；',
+        '- 每个小节用「- 」开头的列表项填写，一项一行；条目内需要补充说明时用「 | 」分隔（如：- 李志 | 华语民谣，S 级）；',
+        '- 只引用数据里真实出现的艺人/流派/年代，具体、克制，不要空话套话；某小节没有可靠依据就留空（只保留标题行），不要编造；',
+        '- 不要输出 Markdown 表格、代码块、前言或结尾总结。',
+        '## 一句话概括',
+        '## 喜欢（按强度排序）',
+        '## 不喜欢（明确排除）',
+        '## 场景偏好',
+        '## 情绪安全区',
+        '## 私人避让',
+        '## 探索倾向',
+        '## 给 DJ 的一句话',
       ].join('\n');
 
       const r = await deps.brainAdapter.compute(prompt, { timeoutMs: Math.max(config.brain.timeoutMs, 120000) });
-      const profile = (r.text || '').trim();
+      let profile = (r.text || '').trim();
+      profile = keepPersonalSections(kd('user/taste.md'), profile);
       fs.writeFileSync(kd('user/taste.md'), profile);
       const newHash = corpusHashFn().hash;
       deps.hub?.broadcast('state-change', { state: 'corpus_updated', sha1: newHash });

@@ -128,6 +128,7 @@ export class DirectApiBrainAdapter {
   async compute(promptText, opts = {}) {
     const started = Date.now();
     const timeoutMs = opts.timeoutMs ?? this.timeoutMs;
+    const maxTokens = opts.maxTokens ?? 8000;   // anthropic 协议下思考 token 计入 max_tokens，2000 会被思考吃光导致正文截断
     const content = String(promptText ?? '');
 
     let j;
@@ -137,7 +138,7 @@ export class DirectApiBrainAdapter {
         'content-type': 'application/json',
       }, {
         model: this.modelId,
-        max_tokens: 2000,
+        max_tokens: maxTokens,
         messages: [{ role: 'user', content }],
       }, timeoutMs);
     } else {
@@ -147,7 +148,7 @@ export class DirectApiBrainAdapter {
         'content-type': 'application/json',
       }, {
         model: this.modelId,
-        max_tokens: 2000,
+        max_tokens: maxTokens,
         messages: [{ role: 'user', content }],
         ...this._fastParams(),
       }, timeoutMs);
@@ -158,6 +159,10 @@ export class DirectApiBrainAdapter {
       const e = new Error(`直连 API 无正文（stop=${j.stop_reason || j.choices?.[0]?.finish_reason}）`);
       e.code = 'E_BRAIN_NO_FINAL';
       throw e;
+    }
+    const stop = j.stop_reason || j.choices?.[0]?.finish_reason;
+    if (stop === 'max_tokens') {
+      this.log.warn?.('直连 API 输出被 max_tokens 截断（仍返回已有正文）', { model: this.modelId, chars: text.length });
     }
     const u = j.usage || {};
     return {

@@ -813,26 +813,171 @@
   $('btnDjClose').addEventListener('click', () => { $('djModal').hidden = true; });
   $('djModal').addEventListener('click', (e) => { if (e.target.id === 'djModal') $('djModal').hidden = true; });
 
-  // ---------- Profile：品味语料 ----------
+  // ---------- Profile：品味语料（表单化：小节 + 条目，支持增删改，保存即同步大脑） ----------
   let tasteBase = null;
+  let tasteDoc = null;        // { preamble: string[], sections: [{title, items:[{main,note}], extra:[]}] }
+  let tasteSource = false;    // true = 源码视图（textarea），false = 表单视图
+
+  const splitItem = (s) => {
+    const i = s.indexOf(' | ');
+    return i === -1 ? { main: s, note: '' } : { main: s.slice(0, i), note: s.slice(i + 3) };
+  };
+
+  /** markdown → 结构化。- / * / • 开头为条目；旧表格行按「|」拆成条目；其余归入小节备注 */
+  function parseTaste(md) {
+    const doc = { preamble: [], sections: [] };
+    let cur = null;
+    for (const ln of String(md || '').split(/\r?\n/)) {
+      const h = ln.match(/^##\s+(.+)$/);
+      if (h) { cur = { title: h[1].trim(), items: [], extra: [] }; doc.sections.push(cur); continue; }
+      if (!cur) { doc.preamble.push(ln); continue; }
+      const t = ln.trim();
+      if (!t) continue;
+      const bullet = t.match(/^[-*•]\s+(.+)$/);
+      if (bullet) { cur.items.push(splitItem(bullet[1].trim())); continue; }
+      if (/^\|[-\s:|]+\|$/.test(t)) continue;   // 表格分隔行
+      if (t.startsWith('|')) {                   // 旧表格数据行 → 条目
+        const cells = t.replace(/^\|/, '').replace(/\|\s*$/, '').split('|').map((x) => x.trim()).filter(Boolean);
+        if (cells.length) cur.items.push(splitItem(cells.join(' | ')));
+        continue;
+      }
+      cur.extra.push(t);
+    }
+    return doc;
+  }
+
+  /** 结构化 → markdown（无损往返；空条目丢弃） */
+  function serializeTaste(doc) {
+    const out = [];
+    const pre = (doc.preamble || []).join('\n').replace(/\s+$/, '');
+    if (pre) out.push(pre, '');
+    doc.sections.forEach((s, i) => {
+      out.push(`## ${s.title}`);
+      for (const it of s.items) {
+        const body = [it.main, it.note].map((x) => (x || '').trim()).filter(Boolean).join(' | ');
+        if (body) out.push(`- ${body}`);
+      }
+      if (s.extra.length) out.push('', ...s.extra);
+      if (i < doc.sections.length - 1) out.push('');
+    });
+    return out.join('\n').trim() + '\n';
+  }
+
+  function tasteItemEl(s, it) {
+    const row = document.createElement('div');
+    row.className = 'titem';
+    const main = document.createElement('input');
+    main.className = 'ti-main';
+    main.value = it.main;
+    main.placeholder = '条目内容（如：李志）';
+    main.addEventListener('input', () => { it.main = main.value; });
+    const note = document.createElement('input');
+    note.className = 'ti-note';
+    note.value = it.note;
+    note.placeholder = '补充说明（选填）';
+    note.addEventListener('input', () => { it.note = note.value; });
+    const del = document.createElement('button');
+    del.className = 'pill ti-del';
+    del.textContent = '×';
+    del.title = '删除这一项';
+    del.addEventListener('click', () => { s.items.splice(s.items.indexOf(it), 1); renderTasteForm(); });
+    row.append(main, note, del);
+    return row;
+  }
+
+  function tasteSectionEl(s) {
+    const el = document.createElement('div');
+    el.className = 'tsec';
+    const head = document.createElement('div');
+    head.className = 'tsec-head';
+    const title = document.createElement('input');
+    title.className = 'tsec-title mono';
+    title.value = s.title;
+    title.placeholder = '小节标题';
+    title.addEventListener('input', () => { s.title = title.value; });
+    const del = document.createElement('button');
+    del.className = 'pill tsec-del';
+    del.textContent = '删除本节';
+    del.title = '删除整个小节';
+    del.addEventListener('click', () => { tasteDoc.sections.splice(tasteDoc.sections.indexOf(s), 1); renderTasteForm(); });
+    head.append(title, del);
+    const items = document.createElement('div');
+    items.className = 'tsec-items';
+    for (const it of s.items) items.appendChild(tasteItemEl(s, it));
+    const add = document.createElement('button');
+    add.className = 'pill titem-add';
+    add.textContent = '+ 添加一项';
+    add.addEventListener('click', () => {
+      const it = { main: '', note: '' };
+      s.items.push(it);
+      renderTasteForm();
+      const box = $('tasteForm');
+      const sec = box.querySelectorAll('.tsec')[tasteDoc.sections.indexOf(s)];
+      const rows = sec?.querySelectorAll('.titem');
+      rows?.[rows.length - 1]?.querySelector('input')?.focus();
+    });
+    el.append(head, items, add);
+    if (s.extra.length) {
+      const extra = document.createElement('textarea');
+      extra.className = 'tsec-extra';
+      extra.rows = Math.min(4, s.extra.length);
+      extra.value = s.extra.join('\n');
+      extra.placeholder = '本节自由备注（选填）';
+      extra.addEventListener('input', () => { s.extra = extra.value.split('\n'); });
+      el.appendChild(extra);
+    }
+    return el;
+  }
+
+  function renderTasteForm() {
+    const box = $('tasteForm');
+    if (!box) return;
+    box.innerHTML = '';
+    if (!tasteDoc) tasteDoc = parseTaste('');
+    for (const s of tasteDoc.sections) box.appendChild(tasteSectionEl(s));
+    const addSec = document.createElement('button');
+    addSec.className = 'pill tsec-add';
+    addSec.textContent = '+ 添加小节';
+    addSec.addEventListener('click', () => {
+      tasteDoc.sections.push({ title: '新小节', items: [{ main: '', note: '' }], extra: [] });
+      renderTasteForm();
+      const secs = box.querySelectorAll('.tsec-title');
+      secs[secs.length - 1]?.focus();
+    });
+    box.appendChild(addSec);
+  }
+
+  function setTasteView(source) {
+    tasteSource = source;
+    $('tasteEditor').hidden = !source;
+    $('tasteForm').hidden = source;
+    $('btnTasteView').textContent = source ? '表单视图' : '源码视图';
+    if (source) $('tasteEditor').value = serializeTaste(tasteDoc || parseTaste(''));
+    else { tasteDoc = parseTaste($('tasteEditor').value); renderTasteForm(); }
+  }
+
   async function loadTaste() {
     try {
       const r = await fetch('/api/taste');
       const j = await r.json();
       tasteBase = j.sha1;
+      tasteDoc = parseTaste(j.content || '');
       $('tasteEditor').value = j.content || '';
       $('tasteSha').textContent = j.sha1;
+      if (!tasteSource) renderTasteForm();
     } catch { $('tasteMsg').textContent = '加载失败'; }
   }
+  $('btnTasteView').addEventListener('click', () => setTasteView(!tasteSource));
   $('btnSaveTaste').addEventListener('click', async () => {
     $('btnSaveTaste').disabled = true;
     try {
+      const content = tasteSource ? $('tasteEditor').value : serializeTaste(tasteDoc || parseTaste(''));
       const r = await fetch('/api/taste', {
         method: 'PUT', headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ baseSha1: tasteBase, content: $('tasteEditor').value }),
+        body: JSON.stringify({ baseSha1: tasteBase, content }),
       });
       const j = await r.json();
-      $('tasteMsg').textContent = r.ok ? `已保存，下次触发生效（${j.sha1}）` : `失败：${j.message || r.status}`;
+      $('tasteMsg').textContent = r.ok ? '已保存并同步大脑，下一轮对话起生效' : `失败：${j.message || r.status}`;
       if (r.ok) tasteBase = j.sha1;
     } catch { $('tasteMsg').textContent = '网络错误'; }
     $('btnSaveTaste').disabled = false;

@@ -99,13 +99,15 @@
   <section class="view" id="view-profile">
     <div class="card">
       <div class="card-head mono">MY TASTE <span class="badge mono" id="tasteSha">-</span></div>
-      <div class="reason" style="margin-bottom:10px">品味来源：网易云账号（喜欢 + 听歌排行前 100）自动生成，反映你近期的听歌风格；也可以手动编辑。编辑后点「应用生效」写入电台。</div>
+      <div class="reason" style="margin-bottom:10px">品味按小节分条目管理：每条一行，可直接修改、新增或删除，也可点「从网易云生成品味」由大脑基于你的喜欢与听歌排行自动填写。点「应用生效」保存后，大脑下一轮对话即读取最新品味。</div>
       <div class="row" style="margin-top:0;margin-bottom:10px">
         <button class="primary" id="btnTasteRegen">从网易云生成品味</button>
         <button class="pill" id="btnSaveTaste">应用生效</button>
+        <button class="pill" id="btnTasteView">源码视图</button>
         <span id="tasteMsg" class="reason"></span>
       </div>
-      <textarea id="tasteEditor" spellcheck="false"></textarea>
+      <div id="tasteForm"></div>
+      <textarea id="tasteEditor" spellcheck="false" hidden></textarea>
     </div>
   </section>
 
