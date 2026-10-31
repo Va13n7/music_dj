@@ -439,13 +439,7 @@
         }
         if (m.type === 'state-change' && m.data?.state) {
           if (!userPaused) $('state').textContent = m.data.state;
-          // 思考/解析中：只亮节目名旁的小徽标，不占歌曲名、不顶节目名
-          if (!userPaused && (m.data.state === 'THINKING' || m.data.state === 'RESOLVING')) {
-            $('thinkingTag').hidden = false;
-            $('say').textContent = '（DJ 思考中…）';
-          } else if (m.data.state !== 'THINKING' && m.data.state !== 'RESOLVING') {
-            $('thinkingTag').hidden = true;
-          }
+          // 思考徽标只由用户发送消息触发（send() 亮、播报到达灭），服务端定时/漫游思考不亮
         }
       } catch { /* ignore */ }
     };
@@ -476,10 +470,12 @@
   let favOn = false;
   let pausedPending = null;  // 暂停期间到达的新播报：挂起，恢复播放键一按即播（必须在模块作用域，resumePlayback 要读）
   let chatPending = null;    // DJ 正在说话时到达的聊天插话：说完当前这句立刻补说（只留最新一条）
+  let sendGuard = null;      // 思考徽标兜底：发送后 120s 无播报自动熄灭
 
   function renderBroadcast(b, { restart = false } = {}) {
     const sameId = current?.id === b.id;
     $('thinkingTag').hidden = true;   // 播报到达（正式或占位）＝思考结束
+    clearTimeout(sendGuard);
     // 闲聊/占位轮：只回话没配歌（play=[]；含思考期的占位播报）。不覆写播放现场——
     // 队列/曲目/进度原样保留，正在播就压音乐插话，闲置就独白；暂停中占位直接丢弃。
     const hasLiveMusic = !!current?.queue?.length || (audio.src && !audio.src.startsWith('data:'));
@@ -810,7 +806,9 @@
     addChat('user', text);
     $('btnSend').disabled = true;
     if (!userPaused) $('state').textContent = 'THINKING';
-    $('thinkingTag').hidden = false;          // 节目名旁的小徽标：思考中（不占歌曲名/节目名）
+    $('thinkingTag').hidden = false;          // 节目名旁的小徽标：仅用户发送触发；播报到达即灭，120s 兜底
+    clearTimeout(sendGuard);
+    sendGuard = setTimeout(() => { $('thinkingTag').hidden = true; if ($('say').textContent.includes('思考中')) $('say').hidden = true; }, 120000);
     $('say').textContent = '（DJ 思考中…）';
     try {
       const r = await fetch('/api/chat', {
@@ -821,7 +819,10 @@
         // 已受理，结果经 WS now-playing 推送
       } else if (r.ok) {
         const j = await r.json();
-        if (j.control) handleControl(j.control);
+        if (j.superseded) {
+          // 高频连发只认最后一条：被覆盖的请求静默丢弃（DJ 不会重复回复）
+        }
+        else if (j.control) handleControl(j.control);
         else renderBroadcast(j);
       } else {
         addChat('system', `发送失败（${r.status}）`);

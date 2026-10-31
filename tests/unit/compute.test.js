@@ -218,3 +218,48 @@ test('漫游口播修复：缺口播的曲目经 repair 补齐可播口播', asy
   assert.ok(tracks[0].intro?.audioUrl, 'repair 应补出可播口播');
   assert.equal(tracks[0].intro.synthed, true);
 });
+
+test('高频连发：只认最后一条——pending 让位，running 折叠不播报不落记忆', async () => {
+  let release;
+  const gate = new Promise((r) => { release = r; });
+  const state = new StateStore(path.join(fs.mkdtempSync(path.join(os.tmpdir(), 'claudiao-coalesce-')), 't.db'));
+  const cfg = {
+    root: ROOT, log: { dir: 'data/logs' },
+    brain: { timeoutMs: 5000, retry: 0 },
+    tts: { voice: 'v', rate: '+0%', pitch: '+0Hz', cacheDir: 'data/tts-cache', concurrency: 1 },
+    music: { fallbackDir: 'data/fallback-audio' },
+  };
+  const brain = {
+    available: () => true,
+    compute: async () => {
+      await gate;
+      return { action: { say: '测试播报。', play: ['李志 - 下雨'], reason: 'r', segue: '', degraded: [] },
+        raw: { sessionId: 's', usage: null }, meta: { path: 'final', repairs: [], retries: 0, attempts: 1 } };
+    },
+  };
+  const music = {
+    resolve: async (spec) => ({ url: 'https://cdn.example/x.mp3', br: 320, size: 1, from: 't', resolvedAt: 0, expiresAt: 1,
+      track: { originalId: specId(spec), id: specId(spec), source: 'netease', name: spec.split(' - ')[1] || spec, artist: [spec.split(' - ')[0] || '未知'], album: 'A', coverUrl: null, durationMs: 200000, playFlag: true }, score: 50 }),
+    search: async () => [],
+  };
+  let broadcasts = 0;
+  const svc = new ComputeService({
+    config: cfg, brain, music, tts: new FakeTtsAdapter(), state,
+    log: { info() {}, warn() {}, error() {}, debug() {}, prompt() {}, child() { return this; } },
+    onBroadcast: (b) => { if (!b.placeholder) broadcasts++; },
+  });
+
+  const pa = svc.handleUserChat('第一条');        // 立即开跑，brain 挂在 gate 上
+  await new Promise((r) => setTimeout(r, 40));    // 等 A 进入 brain 阶段
+  const pb = svc.handleUserChat('第二条');        // A 被标记覆盖；B 入队
+  const pc = svc.handleUserChat('第三条');        // B 让位；C 入队
+  release();
+  const [a, b, c] = await Promise.all([pa, pb, pc]);
+  assert.equal(a.superseded, true, 'running 的第一条被折叠');
+  assert.equal(b.superseded, true, 'pending 的第二条让位');
+  assert.equal(c.superseded, undefined, '最后一条正常播报');
+  assert.equal(c.state, 'SPEAKING');
+  assert.equal(broadcasts, 1, '只有最后一条推了播报');
+  const djMsgs = state.recentMessages(10).filter((m) => m.role === 'dj');
+  assert.equal(djMsgs.length, 1, '被折叠的不落记忆');
+});

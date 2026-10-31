@@ -52,6 +52,9 @@ export class ComputeService {
     this.log = (deps.log?.child?.('compute')) ?? deps.log ?? console;
     this.machine = new Machine('IDLE', { onChange: (s, p) => this.log.debug?.(`状态 ${p} → ${s}`) });
     this._running = null;
+    this._runningEntry = null;
+    this._lastPlaceholderAt = 0;
+    this._supersededLive = null;
     this._queue = [];
     this._nowPlaying = null;
     this._fallbackIndex = 0;
@@ -70,14 +73,28 @@ export class ComputeService {
     const intent = classify({ text, source: 'user_chat' }, { knowledgeDir: this._kd() });
     // 控制指令直连：不过大脑/音乐/TTS，毫秒级生效（docs/02 §2.3）
     if (intent.name === 'control') return this._handleControl(intent);
-    // 占位播报（Q-04）：大脑思考期间先让 DJ 开口（合成结果有缓存，~3s 内出声）
-    if (intent.needBrain) this._emitPlaceholder(intent).catch(() => {});
+    // 高频连发只认最后一条：还没开跑的旧 user_chat 意图直接让位，不播报不入记忆
+    const stale = this._queue.filter((e) => e.priority === 'user_chat');
+    for (const e of stale) {
+      this._queue.splice(this._queue.indexOf(e), 1);
+      e.resolve({ superseded: true, say: { text: '', audioUrl: null, skipped: true }, queue: [], state: 'IDLE' });
+    }
+    if (stale.length) this.log.info?.('高频连发已合并，只保留最新一条', { dropped: stale.length });
+    // 正在跑的也是 user_chat 且被更新的一条覆盖 → 跑完不再播报（只回 HTTP，前端按 superseded 丢弃）
+    // classify 冻结了 intent 对象，用引用对比标记（_supersededLive === intent）
+    if (this._runningEntry?.priority === 'user_chat') this._supersededLive = this._runningEntry.intent;
+    // 占位播报：仅首条触发；连发期间不重复插「让我想想」
+    const pendingUserChat = this._queue.some((e) => e.priority === 'user_chat');
+    if (intent.needBrain && !pendingUserChat && Date.now() - (this._lastPlaceholderAt || 0) > 10000) {
+      this._emitPlaceholder(intent).catch(() => {});
+    }
     return this._enqueue(intent, 'user_chat');
   }
 
   /** 占位播报：立即推一条短 say（缓存命中后毫秒级），正式播报完成后自然替换 */
   async _emitPlaceholder(intent) {
     try {
+      this._lastPlaceholderAt = Date.now();
       if (this.deps.state?.getPref?.('say.muted') === true) return;
       const line = PLACEHOLDER_LINES[Math.floor(Math.random() * PLACEHOLDER_LINES.length)];
       const t = await this.deps.tts.synthesize({ text: line });
@@ -208,7 +225,8 @@ export class ComputeService {
 
   _enqueue(intent, priority) {
     if (!this._running) {
-      this._running = this._exec(intent, priority).finally(() => { this._running = null; this._drain(); });
+      this._runningEntry = { intent, priority };
+      this._running = this._exec(intent, priority).finally(() => { this._running = null; this._runningEntry = null; this._drain(); });
       return this._running;
     }
     return new Promise((resolve, reject) => {
@@ -293,6 +311,23 @@ export class ComputeService {
         this.log.warn?.('大脑阶段异常 → 模板播报', { error: e.message });
       }
       timings.brainMs = Date.now() - b0;
+      // 高频连发：这轮跑的时候已被更新的用户消息覆盖 → 就地折叠，不解析音乐/不合成语音/不落记忆/不推 WS
+      if (this._supersededLive === intent) {
+        this._supersededLive = null;
+        this.log.info?.('覆盖折叠：只认最后一条', { droppedSay: (action.say || '').slice(0, 30) });
+        return {
+          id: bid, sessionId: brainResult.raw.sessionId, program,
+          intent: { name: intent.name, lane: intent.lane, source: intent.source, priority: intent.priority,
+            text: intent.text || '', mood: intent.slots?.mood ?? null, moodCandidates: [], slot: intent.slots?.slot ?? null,
+            confidence: intent.confidence, reason: intent.reason || '' },
+          say: { text: '', audioUrl: null, mime: null, durationMs: null, est: true, voice: this.cfg.tts.voice, engine: null, cached: false, skipped: true },
+          queue: [], fallbackAudio: null, reason: '', segue: '', state: 'IDLE',
+          degraded: false, degradedReasons: [], contextHash: hash.hash,
+          timings: { ...timings, parsePath: brainResult.meta.path, retries: brainResult.meta.retries, usage: brainResult.raw.usage || null },
+          at: new Date().toISOString(),
+          superseded: true,
+        };
+      }
       if (brainResult.meta.path === 'fallback' || action.degraded?.includes('brain_template')) degraded.push('brain_template');
       degraded.push(...(action.degraded || []).filter((d) => d !== 'brain_template'));
       const usage = brainResult.raw.usage;
