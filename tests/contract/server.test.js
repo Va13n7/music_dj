@@ -72,7 +72,7 @@ test('服务契约：6 条 API + 静态 + WS + 413', async () => {
     // 静态壳层
     const page = await fetch(`${base}/`, { headers: auth });
     assert.equal(page.status, 200);
-    assert.ok((await page.text()).includes('Claudiao'));
+    assert.ok((await page.text()).includes('Sonder'));
 
     // 非本机语义：无令牌 → 401（用 Host 头伪装非本机域名时 hostname 检查不成立……
     // 这里验证令牌错误 → 401）

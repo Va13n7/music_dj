@@ -1,5 +1,5 @@
 /**
- * Claudiao FM · 前端逻辑（点阵电台版）
+ * Sonder FM · 前端逻辑（点阵电台版）
  * 双 <audio> 并行声道（音乐 + DJ 人声）；userPaused 冻结一切自动接续。
  * 视觉引擎：点阵时钟/Logo · 双声道实时波形 · DJ 逐词卡拉OK字幕 · 队列面板 · 聊天气泡。
  * WS 指数退避 + 断线轮询；MediaSession 锁屏控制；BroadcastChannel 单实例播放锁。
@@ -47,6 +47,10 @@
     'D': ['11110', '10001', '10001', '10001', '10001', '10001', '11110'],
     'I': ['01110', '00100', '00100', '00100', '00100', '00100', '01110'],
     'O': ['01110', '10001', '10001', '10001', '10001', '10001', '01110'],
+    'S': ['01111', '10000', '10000', '01110', '00001', '10001', '01110'],
+    'N': ['10001', '11001', '10101', '10011', '10001', '10001', '10001'],
+    'E': ['11111', '10000', '10000', '11110', '10000', '10000', '11111'],
+    'R': ['11110', '10001', '10001', '11110', '10100', '10010', '10001'],
   };
   let _dotCol = null, _waveCol = null;
   const themeVar = (name, fallback) => {
@@ -80,7 +84,7 @@
       }
     });
   }
-  function drawLogo() { drawDots($('logoDots'), 'CLAUDIAO', { size: 2.6, gap: 1.4 }); }
+  function drawLogo() { drawDots($('logoDots'), 'SONDER', { size: 2.6, gap: 1.4 }); }
   function drawClock() {
     const d = new Date();
     drawDots($('dotClock'), `${String(d.getHours()).padStart(2, '0')}:${String(d.getMinutes()).padStart(2, '0')}`, { size: 9, gap: 5 });
@@ -454,7 +458,7 @@
     if ('mediaSession' in navigator && b.queue?.[0]) {
       navigator.mediaSession.metadata = new MediaMetadata({
         title: b.queue[0].title, artist: b.queue[0].artist,
-        album: 'Claudiao 电台', artwork: b.queue[0].coverUrl ? [{ src: b.queue[0].coverUrl }] : [],
+        album: 'Sonder 电台', artwork: b.queue[0].coverUrl ? [{ src: b.queue[0].coverUrl }] : [],
       });
     }
   }

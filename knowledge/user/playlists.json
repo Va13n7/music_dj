@@ -1,6 +1,6 @@
 {
   "$schema_version": "1.0",
-  "$description": "Claudiao 电台曲目池。施工图第一层 USER/ 的 playlists.json，被 context.js 第 ② 片读取，用于按时段/情绪兜底选曲。所有曲目格式必须为 '艺人 - 曲名'（空格+半角连字符+空格），与 DjAction.play[] 元素格式一致。",
+  "$description": "Sonder FM 电台曲目池。施工图第一层 USER/ 的 playlists.json，被 context.js 第 ② 片读取，用于按时段/情绪兜底选曲。所有曲目格式必须为 '艺人 - 曲名'（空格+半角连字符+空格），与 DjAction.play[] 元素格式一致。",
   "$usage": "context.js 按 slot 或 mood 取对应歌单的前若干首作为候选，并剔除最近 24 小时已播曲目（见 src/layer2/state.js 的 recentPlays）。",
   "version": 1,
   "updated": "2026-10-15",

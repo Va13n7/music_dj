@@ -1,6 +1,6 @@
 {
-  "name": "Claudiao 电台",
-  "short_name": "Claudiao",
+  "name": "Sonder FM",
+  "short_name": "Sonder",
   "description": "只有你一个听众的私人 AI 音乐电台",
   "start_url": "/",
   "display": "standalone",

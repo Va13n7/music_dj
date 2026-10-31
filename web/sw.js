@@ -1,5 +1,5 @@
-/* Claudiao PWA Service Worker：壳层离线缓存（网络优先，缓存兜底） */
-const CACHE = 'claudiao-v2';
+/* Sonder FM PWA Service Worker：壳层离线缓存（网络优先，缓存兜底） */
+const CACHE = 'sonder-v2';
 const SHELL = ['/', '/index.html', '/app.js', '/style.css', '/manifest.webmanifest'];
 
 self.addEventListener('install', (e) => {

@@ -1,8 +1,8 @@
 {
-  "name": "claudiao",
+  "name": "sonder-fm",
   "version": "0.1.0",
   "private": true,
-  "description": "Claudiao · 个人 AI 音乐电台 —— 听懂你的习惯、规划声音、像 DJ 那样播报",
+  "description": "Sonder · 个人 AI 音乐电台 —— 听懂你的习惯、规划声音、像 DJ 那样播报",
   "type": "module",
   "engines": {
     "node": ">=22.5.0"
