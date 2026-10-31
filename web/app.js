@@ -459,6 +459,24 @@
 
   function renderBroadcast(b, { restart = false } = {}) {
     const sameId = current?.id === b.id;
+    // 闲聊轮：大脑只回话没配歌（play=[]）。不覆写播放现场——队列/曲目/进度原样保留，
+    // 正在播就压音乐插话，暂停中就挂起（恢复时补说），闲置就独白。
+    const hasLiveMusic = !!current?.queue?.length || (audio.src && !audio.src.startsWith('data:'));
+    if (!sameId && !b.queue?.length && !b.fallbackAudio && hasLiveMusic) {
+      if (!userPaused) $('state').textContent = 'SPEAKING';
+      if (b.program?.name) $('program').textContent = b.program.name;
+      $('say').textContent = b.say?.text ? `“${b.say.text}”` : '';
+      $('say').hidden = !b.say?.text;
+      $('why').textContent = b.reason || '';
+      addChat('dj', b.say?.text || '', { audioUrl: b.say?.audioUrl });
+      if (b.say?.audioUrl && !b.say.skipped) {
+        const text = b.say.text || '';
+        if (userPaused) holdSay = { url: b.say.audioUrl, text, onEnded: null };
+        else if (!audio.paused && !audio.ended && audio.src) speakOverMusic({ audioUrl: b.say.audioUrl, text });
+        else speakSolo(b.say.audioUrl, text, null);
+      }
+      return;
+    }
     current = b;
     if (!sameId) { qIndex = 0; phase = b.say?.audioUrl ? 'say' : 'track'; favOn = false; $('btnFav').classList.remove('on'); }
     if (!userPaused) $('state').textContent = b.state || '';
