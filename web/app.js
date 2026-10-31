@@ -867,11 +867,13 @@
     const row = document.createElement('div');
     row.className = 'titem';
     const main = document.createElement('input');
+    main.type = 'text';
     main.className = 'ti-main';
     main.value = it.main;
     main.placeholder = '条目内容（如：李志）';
     main.addEventListener('input', () => { it.main = main.value; });
     const note = document.createElement('input');
+    note.type = 'text';
     note.className = 'ti-note';
     note.value = it.note;
     note.placeholder = '补充说明（选填）';
@@ -891,6 +893,7 @@
     const head = document.createElement('div');
     head.className = 'tsec-head';
     const title = document.createElement('input');
+    title.type = 'text';
     title.className = 'tsec-title mono';
     title.value = s.title;
     title.placeholder = '小节标题';
