@@ -58,6 +58,8 @@ Reply with **one JSON object** — no markdown fences, no explanations, no prefi
 | \`play\` | string[] | required, format strictly \`"Artist - Title"\` (spaced hyphen). **MUST be \`[]\` on chat turns.** Max 5, prefer 3 when playing music. |
 | \`intros\` | string[] | **required, aligned with \`play\`**: one spoken line (15~50 words) per track, read OVER the music. Each line = why THIS song, right NOW (time / the user's words / mood + something about the track itself). \`[]\` when \`play\` is empty. |
 | \`reason\` | string | required, **in Chinese** (shown in the web UI, not read aloud). ≤80 chars. |
+| \`say_zh\` | string | required. **Chinese translation of \`say\`** for the subtitle track: natural spoken Chinese, radio-DJ tone, NOT word-for-word. Sentence count/order should mirror \`say\`. Not read aloud. |
+| \`intros_zh\` | string[] | **required, aligned with \`intros\`**: Chinese translation of each intro line, same tone rules. \`[]\` when \`play\` is empty. |
 | \`segue\` | string | optional transition line (also English), \`""\` allowed. |
 
 Hard rules:

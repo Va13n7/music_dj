@@ -203,9 +203,9 @@
     // DJ 说完了：补上排队中的聊天插话（只留最新一条）；暂停中则挂到恢复后
     if (chatPending) {
       const c = chatPending; chatPending = null;
-      if (userPaused) holdSay = { url: c.audioUrl, text: c.text, onEnded: c.onEnded || null };
+      if (userPaused) holdSay = { url: c.audioUrl, text: c.text, zh: c.zh, onEnded: c.onEnded || null };
       else if (audio.src && !audio.paused && !audio.ended) speakOverMusic(c);
-      else speakSolo(c.audioUrl, c.text, c.onEnded || null);
+      else speakSolo(c.audioUrl, c.text, c.onEnded || null, c.zh);
     }
   }
   function splitSentences(text) {
@@ -216,13 +216,15 @@
     if (/[\u4e00-\u9fff]/.test(sent)) return [...sent];          // 中文按字
     return sent.split(/\s+/).filter(Boolean);                    // 英文按词
   }
-  function startTranscript(text) {
+  function startTranscript(text, zh = '') {
     stopTranscriptPoll();
     const bar = $('subtitleBar');
     bar.hidden = false;
     bar.innerHTML = '';
     tLines = [];
     const sents = splitSentences(text);
+    const zhSents = zh ? splitSentences(zh) : [];
+    const zhAligned = zhSents.length === sents.length;   // 句数对齐逐句配对；不齐则整段挂首句下
     const sWeights = sents.map((s) => Math.max(1, s.replace(/\s/g, '').length));
     const sTotal = sWeights.reduce((a, b) => a + b, 0);
     let acc = 0;
@@ -237,6 +239,13 @@
         sp.className = 'tw'; sp.textContent = tok;
         tt.appendChild(sp);
       });
+      const zhText = zhAligned ? zhSents[si] : (si === 0 ? zh : '');
+      if (zhText) {
+        const zd = document.createElement('div');
+        zd.className = 'tzh';
+        zd.textContent = zhText;
+        line.appendChild(zd);
+      }
       const tokWeights = toks.map((t) => Math.max(1, t.length));
       tLines.push({
         el: line, sps: [...tt.children], tokWeights,
@@ -333,12 +342,12 @@
       favOn = false; $('btnFav').classList.remove('on');
       renderTrack(b.queue?.[qIndex] || b.queue?.[0]);
       renderQueue();
-      if (b.say?.audioUrl && !b.say.skipped) speakSolo(b.say.audioUrl, b.say.text || '', () => { phase = 'track'; startQueue(b); });
+      if (b.say?.audioUrl && !b.say.skipped) speakSolo(b.say.audioUrl, b.say.text || '', () => { phase = 'track'; startQueue(b); }, b.say.zh || '');
       else startQueue(b);
       return;
     }
     if (pendingAdvance) { pendingAdvance = false; playCurrentIndex(); return; }
-    if (holdSay) { const s = holdSay; holdSay = null; speakSolo(s.url, s.text, s.onEnded); return; }
+    if (holdSay) { const s = holdSay; holdSay = null; speakSolo(s.url, s.text, s.onEnded, s.zh); return; }
     if (phase === 'say') {
       if (voiceA.src && !voiceA.ended) tryPlay(voiceA, '口播');
       else if (current) { phase = 'track'; startQueue(current); }
@@ -369,12 +378,12 @@
       voiceA.onerror = () => { ducked = false; fadeMusicTo(baseVol, 500); finishTranscript(); intro.onEnded?.(); };
       voiceA.play().catch(() => { ducked = false; fadeMusicTo(baseVol, 500); finishTranscript(); intro.onEnded?.(); });
       $('speakingTag').hidden = false;
-      startTranscript(intro.text || '');
+      startTranscript(intro.text || '', intro.zh || '');
     }, 700);                          // 音乐先起 ~0.7s 再开口，像真电台
   }
   /** DJ 说话（不经音乐的开场白/占位）。暂停期间先记下，恢复时补说 */
-  function speakSolo(u, text, onEnded) {
-    if (userPaused) { holdSay = { url: u, text, onEnded }; return; }
+  function speakSolo(u, text, onEnded, zh = '') {
+    if (userPaused) { holdSay = { url: u, text, onEnded, zh }; return; }
     voiceA.src = u;
     voiceA.onended = () => { finishTranscript(); $('speakingTag').hidden = true; if (onEnded) onEnded(); };
     // 开场白音频加载失败：不能卡死在 say 阶段——直接进队列放歌
@@ -388,7 +397,7 @@
       if (onEnded) onEnded();
     });
     $('speakingTag').hidden = false;
-    if (text) startTranscript(text);
+    if (text) startTranscript(text, zh);
   }
 
   // ---------- WS 客户端：指数退避 + 断线轮询 ----------
@@ -430,10 +439,12 @@
         }
         if (m.type === 'state-change' && m.data?.state) {
           if (!userPaused) $('state').textContent = m.data.state;
-          if (m.data.state === 'THINKING') {
+          // 思考/解析中：只亮节目名旁的小徽标，不占歌曲名、不顶节目名
+          if (!userPaused && (m.data.state === 'THINKING' || m.data.state === 'RESOLVING')) {
+            $('thinkingTag').hidden = false;
             $('say').textContent = '（DJ 思考中…）';
-            $('title').textContent = '选曲中';
-            $('program').textContent = '选曲中…';
+          } else if (m.data.state !== 'THINKING' && m.data.state !== 'RESOLVING') {
+            $('thinkingTag').hidden = true;
           }
         }
       } catch { /* ignore */ }
@@ -478,18 +489,19 @@
       $('say').textContent = b.say?.text ? `“${b.say.text}”` : '';
       $('say').hidden = !b.say?.text;
       $('why').textContent = b.reason || '';
-      addChat('dj', b.say?.text || '', { audioUrl: b.say?.audioUrl });
+      addChat('dj', b.say?.text || '', { audioUrl: b.say?.audioUrl, zh: b.say?.zh || '' });
       if (b.say?.audioUrl && !b.say.skipped) {
         const text = b.say.text || '';
         // 插话说完：音乐若还在播就恢复音量并亮回 PLAYING；若之前是暂停收的插话，把音乐也续上
         const afterChat = () => { if (!userPaused && audio.src && !audio.paused) $('state').textContent = 'PLAYING'; };
         const resumeMusic = () => { if (!userPaused && audio.src && audio.paused && !audio.ended) tryPlay(audio, '音乐'); };
-        if (userPaused) holdSay = { url: b.say.audioUrl, text, onEnded: resumeMusic };
-        else if (voiceA.src && !voiceA.paused && !voiceA.ended) chatPending = { audioUrl: b.say.audioUrl, text, onEnded: afterChat };
+        const sayZh = b.say?.zh || '';
+        if (userPaused) holdSay = { url: b.say.audioUrl, text, zh: sayZh, onEnded: resumeMusic };
+        else if (voiceA.src && !voiceA.paused && !voiceA.ended) chatPending = { audioUrl: b.say.audioUrl, text, zh: sayZh, onEnded: afterChat };
         else if (!audio.paused && !audio.ended && audio.src) {
-          speakOverMusic({ audioUrl: b.say.audioUrl, text });
+          speakOverMusic({ audioUrl: b.say.audioUrl, text, zh: sayZh });
           voiceA.addEventListener('ended', afterChat, { once: true });
-        } else speakSolo(b.say.audioUrl, text, afterChat);
+        } else speakSolo(b.say.audioUrl, text, afterChat, sayZh);
       }
       return;
     }
@@ -502,7 +514,7 @@
     $('why').textContent = b.reason || '';
     renderTrack(b.queue?.[qIndex] || b.queue?.[0]);
     renderQueue();
-    addChat('dj', b.say?.text || '', { audioUrl: b.say?.audioUrl });
+    addChat('dj', b.say?.text || '', { audioUrl: b.say?.audioUrl, zh: b.say?.zh || '' });
     // 自动起播仅限「新播报且还新鲜」：页面刷新拉回的几小时前旧播报只渲染界面，
     // 不重放——旧播报的歌曲直链多半已过期，重放就是"DJ 说完没歌声"。
     const fresh = !b.at || (Date.now() - new Date(b.at).getTime()) < 5 * 60000;
@@ -510,7 +522,7 @@
       pausedPending = b;                                          // 暂停中收到新播报：只渲染不响，恢复即播
     } else if (!sameId && (fresh || restart)) {
       if (b.say?.audioUrl && !b.say.skipped) {
-        speakSolo(b.say.audioUrl, b.say.text || '', () => { phase = 'track'; startQueue(b); });
+        speakSolo(b.say.audioUrl, b.say.text || '', () => { phase = 'track'; startQueue(b); }, b.say?.zh || '');
       } else startQueue(b);
     }
     if ('mediaSession' in navigator && b.queue?.[0]) {
@@ -841,7 +853,7 @@
       if (meta.audioUrl) {
         div.querySelector('.replay').addEventListener('click', () => {
           clearHold();
-          speakOverMusic({ audioUrl: meta.audioUrl, text });
+          speakOverMusic({ audioUrl: meta.audioUrl, text, zh: meta.zh || '' });
         });
       }
     } else {
@@ -1331,6 +1343,22 @@
   refreshNow();
   renderQueue();
   setTheme((() => { try { return localStorage.getItem('claudiao.theme') || 'dark'; } catch { return 'dark'; } })());
+  // ---------- 字幕中文翻译开关（DJ TRANSCRIPT 卡头部，localStorage 持久化，默认开） ----------
+  if ($('btnSubZh')) {
+    const applySubZh = (on) => {
+      $('subtitleBar').classList.toggle('no-zh', !on);
+      $('btnSubZh').textContent = on ? '中译 开' : '中译 关';
+      $('btnSubZh').classList.toggle('on', on);
+    };
+    let subZhOn = true;
+    try { subZhOn = (localStorage.getItem('claudiao.subzh') ?? '1') === '1'; } catch { /* ignore */ }
+    applySubZh(subZhOn);
+    $('btnSubZh').addEventListener('click', () => {
+      const on = $('subtitleBar').classList.contains('no-zh');   // 当前关 → 将开
+      applySubZh(on);
+      try { localStorage.setItem('claudiao.subzh', on ? '1' : '0'); } catch { /* ignore */ }
+    });
+  }
   // 诊断钩子（只读）：浏览器控制台可查人声声道 WebAudio 状态
   window.__claudiaoAudio = () => ({ voiceCtx: voiceCtx ? voiceCtx.state : 'none', musicWave: 'procedural' });
 })();

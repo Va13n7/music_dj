@@ -147,7 +147,14 @@ export function normalizeAndValidate(o, { maxSay = 200, maxIntro = 160 } = {}) {
   let segue = typeof o.segue === 'string' ? clean(o.segue) : '';
   segue = Array.from(segue).slice(0, 120).join('');
 
-  return { say, play, intros, reason, segue, degraded };
+  // say_zh / intros_zh：中文翻译（djLang=en 时大脑附带，字幕翻译用；缺失给空串）
+  const say_zh = typeof o.say_zh === 'string' ? Array.from(clean(o.say_zh)).slice(0, 400).join('') : '';
+  let intros_zh = Array.isArray(o.intros_zh)
+    ? o.intros_zh.map((s) => (typeof s === 'string' ? Array.from(clean(s)).slice(0, 300).join('') : ''))
+    : [];
+  intros_zh = intros.map((_, i) => intros_zh[i] || '');   // 与 intros 等长对齐
+
+  return { say, say_zh, play, intros, intros_zh, reason, segue, degraded };
 }
 
 /** intros 归一化：字符串数组，逐句清洗 + 截断（maxIntro 160 中文字符 / 300 英文字符由调用方定） */

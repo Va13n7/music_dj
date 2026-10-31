@@ -243,7 +243,7 @@ export class ComputeService {
     this.deps.onEvent?.('state-change', { state: 'THINKING', bid });
     this.machine.tryTo('THINKING');
     const say = {
-      text: '', audioUrl: null, mime: null, durationMs: null, est: true,
+      text: '', zh: '', audioUrl: null, mime: null, durationMs: null, est: true,
       voice: this.cfg.tts.voice, engine: null, cached: false, skipped: false,
     };
 
@@ -297,6 +297,7 @@ export class ComputeService {
       degraded.push(...(action.degraded || []).filter((d) => d !== 'brain_template'));
       const usage = brainResult.raw.usage;
       say.text = action.say;
+      say.zh = action.say_zh || '';   // 英文口播的中文字幕翻译（djLang=en 时大脑附带）
 
       // ③.5 选曲发散：24h 内播过的歌硬过滤（用户亲口点名的豁免）；全滤光 → 个人红心曲库回填。
       //     软约束（契约规则）靠大脑自觉，这里是兜底——LLM 不听话也进不了队列。
@@ -351,11 +352,12 @@ export class ComputeService {
         : Promise.resolve().then(() => { if (sayMuted || !action.say) { say.skipped = true; if (sayMuted) degraded.push('tts_skipped'); } });
 
       // 每首曲目口播的 TTS（与 say 并行进合成队列；mute 时全部跳过）
+      const introZh = Array.isArray(action.intros_zh) ? action.intros_zh : [];
       const introP = (!sayMuted && Array.isArray(action.intros))
-        ? action.intros.map((line) => (line
+        ? action.intros.map((line, i) => (line
             ? this.deps.tts.synthesize({ text: line })
-                .then((t) => ({ text: line, audioUrl: t.audioUrl, mime: t.mime, engine: t.engine, cached: t.cached, skipped: false }))
-                .catch(() => ({ text: line, audioUrl: null, mime: null, engine: null, cached: false, skipped: true }))
+                .then((t) => ({ text: line, zh: introZh[i] || '', audioUrl: t.audioUrl, mime: t.mime, engine: t.engine, cached: t.cached, skipped: false }))
+                .catch(() => ({ text: line, zh: introZh[i] || '', audioUrl: null, mime: null, engine: null, cached: false, skipped: true }))
             : Promise.resolve(null)))
         : [];
 
