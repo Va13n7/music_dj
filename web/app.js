@@ -8,7 +8,8 @@
   const $ = (id) => document.getElementById(id);
   const audio = $('audio');        // 音乐声道
   const voiceA = $('voiceA');      // DJ 人声声道（口播压音乐淡入淡出）
-  let baseVol = 0.9;               // 音乐基础音量；口播期间 duck 到 0.22
+  let baseVol = 0.9;               // 音乐基础音量；口播期间 duck 到 DUCK_VOL
+  const DUCK_VOL = 0.22;
   let introTimer = null;
   let fadeTimer = null;
   const esc = (s) => String(s ?? '').replace(/[&<>"]/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[c]));
@@ -199,6 +200,13 @@
   function finishTranscript() {
     stopTranscriptPoll();
     tLines.forEach((L) => { L.el.classList.add('past'); L.el.classList.remove('active'); L.sps.forEach((sp) => sp.classList.remove('k')); });
+    // DJ 说完了：补上排队中的聊天插话（只留最新一条）；暂停中则挂到恢复后
+    if (chatPending) {
+      const c = chatPending; chatPending = null;
+      if (userPaused) holdSay = { url: c.audioUrl, text: c.text, onEnded: c.onEnded || null };
+      else if (audio.src && !audio.paused && !audio.ended) speakOverMusic(c);
+      else speakSolo(c.audioUrl, c.text, c.onEnded || null);
+    }
   }
   function splitSentences(text) {
     const parts = String(text || '').split(/(?<=[。！？；!?;,.，])\s*/).map((s) => s.trim()).filter(Boolean);
@@ -354,12 +362,12 @@
       introTimer = null;
       currentIntro = null;
       if (userPaused) { pendingIntro = intro; ducked = false; return; }
-      fadeMusicTo(0.22, 700);
+      fadeMusicTo(DUCK_VOL, 700);
       voiceA.src = intro.audioUrl;
-      voiceA.onended = () => { ducked = false; fadeMusicTo(baseVol, 1000); finishTranscript(); };
+      voiceA.onended = () => { ducked = false; fadeMusicTo(baseVol, 1000); finishTranscript(); intro.onEnded?.(); };
       // 口播音频加载失败：不挂死，直接恢复音乐音量继续放歌
-      voiceA.onerror = () => { ducked = false; fadeMusicTo(baseVol, 500); finishTranscript(); };
-      voiceA.play().catch(() => { ducked = false; fadeMusicTo(baseVol, 500); });
+      voiceA.onerror = () => { ducked = false; fadeMusicTo(baseVol, 500); finishTranscript(); intro.onEnded?.(); };
+      voiceA.play().catch(() => { ducked = false; fadeMusicTo(baseVol, 500); finishTranscript(); intro.onEnded?.(); });
       $('speakingTag').hidden = false;
       startTranscript(intro.text || '');
     }, 700);                          // 音乐先起 ~0.7s 再开口，像真电台
@@ -456,6 +464,7 @@
   let phase = 'say';         // say | track
   let favOn = false;
   let pausedPending = null;  // 暂停期间到达的新播报：挂起，恢复播放键一按即播（必须在模块作用域，resumePlayback 要读）
+  let chatPending = null;    // DJ 正在说话时到达的聊天插话：说完当前这句立刻补说（只留最新一条）
 
   function renderBroadcast(b, { restart = false } = {}) {
     const sameId = current?.id === b.id;
@@ -471,9 +480,15 @@
       addChat('dj', b.say?.text || '', { audioUrl: b.say?.audioUrl });
       if (b.say?.audioUrl && !b.say.skipped) {
         const text = b.say.text || '';
-        if (userPaused) holdSay = { url: b.say.audioUrl, text, onEnded: null };
-        else if (!audio.paused && !audio.ended && audio.src) speakOverMusic({ audioUrl: b.say.audioUrl, text });
-        else speakSolo(b.say.audioUrl, text, null);
+        // 插话说完：音乐若还在播就恢复音量并亮回 PLAYING；若之前是暂停收的插话，把音乐也续上
+        const afterChat = () => { if (!userPaused && audio.src && !audio.paused) $('state').textContent = 'PLAYING'; };
+        const resumeMusic = () => { if (!userPaused && audio.src && audio.paused && !audio.ended) tryPlay(audio, '音乐'); };
+        if (userPaused) holdSay = { url: b.say.audioUrl, text, onEnded: resumeMusic };
+        else if (voiceA.src && !voiceA.paused && !voiceA.ended) chatPending = { audioUrl: b.say.audioUrl, text, onEnded: afterChat };
+        else if (!audio.paused && !audio.ended && audio.src) {
+          speakOverMusic({ audioUrl: b.say.audioUrl, text });
+          voiceA.addEventListener('ended', afterChat, { once: true });
+        } else speakSolo(b.say.audioUrl, text, afterChat);
       }
       return;
     }
@@ -587,8 +602,8 @@
     myLastPlayTs = Date.now();
     chan?.postMessage({ type: 'takeover', ts: myLastPlayTs, tabId: TAB_ID });
     audio.src = t.audioUrl;
-    audio.volume = baseVol;
-    if (t.intro?.audioUrl && !t.intro.skipped) speakOverMusic(t.intro);   // 暂停中会被收进 pendingIntro
+    audio.volume = ducked ? DUCK_VOL : baseVol;   // DJ 正在插话时切歌：保持压低，说完自动恢复
+    if (t.intro?.audioUrl && !t.intro.skipped && !ducked && voiceA.paused) speakOverMusic(t.intro);   // DJ 说话中：曲目口播让路
     if (!userPaused) audio.play().catch(() => {});
     addChat('system', `NOW PLAYING · ${t.artist} - ${t.title}`);
     loadLyrics(t);
