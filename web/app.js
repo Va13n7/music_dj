@@ -297,11 +297,22 @@
     $('speakingTag').hidden = true;
     setPlayBtn(false);
   }
+  /** 带兜底的 play()：autoplay 策略拦下时不再无声无息——回退按钮态并给用户明确提示 */
+  function tryPlay(el, label) {
+    const p = el.play();
+    if (p?.catch) p.catch((e) => {
+      if (e?.name === 'NotAllowedError') {
+        userPaused = true;
+        setPlayBtn(false);
+        addChat('system', `${label}被浏览器拦了一下，再点一次播放键就好。`);
+      }
+    });
+  }
   function resumePlayback() {
     if (!userPaused) {
       // 播放键兜底：自动播放被策略拦下时，用户点击（带手势）从这里恢复
-      audio.play().catch(() => {});
-      if (phase === 'say' && voiceA.src && voiceA.paused && !voiceA.ended) voiceA.play().catch(() => {});
+      tryPlay(audio, '音乐');
+      if (phase === 'say' && voiceA.src && voiceA.paused && !voiceA.ended) tryPlay(voiceA, '口播');
       return;
     }
     userPaused = false;
@@ -321,13 +332,13 @@
     if (pendingAdvance) { pendingAdvance = false; playCurrentIndex(); return; }
     if (holdSay) { const s = holdSay; holdSay = null; speakSolo(s.url, s.text, s.onEnded); return; }
     if (phase === 'say') {
-      if (voiceA.src && !voiceA.ended) voiceA.play().catch(() => {});
+      if (voiceA.src && !voiceA.ended) tryPlay(voiceA, '口播');
       else if (current) { phase = 'track'; startQueue(current); }
       return;
     }
-    audio.play().catch(() => {});
+    tryPlay(audio, '音乐');
     if (pendingIntro) { const it = pendingIntro; pendingIntro = null; speakOverMusic(it); return; }
-    if (voiceA.src && voiceA.paused && !voiceA.ended && voiceA.currentTime > 0) voiceA.play().catch(() => {});
+    if (voiceA.src && voiceA.paused && !voiceA.ended && voiceA.currentTime > 0) tryPlay(voiceA, '口播');
   }
   function clearHold() {
     userPaused = false; holdSay = null; pendingIntro = null; pendingAdvance = false; currentIntro = null;
@@ -444,6 +455,7 @@
   let qIndex = 0;            // 当前队列下标
   let phase = 'say';         // say | track
   let favOn = false;
+  let pausedPending = null;  // 暂停期间到达的新播报：挂起，恢复播放键一按即播（必须在模块作用域，resumePlayback 要读）
 
   function renderBroadcast(b, { restart = false } = {}) {
     const sameId = current?.id === b.id;
@@ -459,11 +471,10 @@
     addChat('dj', b.say?.text || '', { audioUrl: b.say?.audioUrl });
     // 自动起播仅限「新播报且还新鲜」：页面刷新拉回的几小时前旧播报只渲染界面，
     // 不重放——旧播报的歌曲直链多半已过期，重放就是"DJ 说完没歌声"。
-  let pausedPending = null;              // 暂停期间到达的新播报：挂起，恢复播放键一按即播
-  const fresh = !b.at || (Date.now() - new Date(b.at).getTime()) < 5 * 60000;
-  if (!sameId && userPaused) {
-    pausedPending = b;                                            // 暂停中收到新播报：只渲染不响，恢复即播
-  } else if (!sameId && (fresh || restart)) {
+    const fresh = !b.at || (Date.now() - new Date(b.at).getTime()) < 5 * 60000;
+    if (!sameId && userPaused) {
+      pausedPending = b;                                          // 暂停中收到新播报：只渲染不响，恢复即播
+    } else if (!sameId && (fresh || restart)) {
       if (b.say?.audioUrl && !b.say.skipped) {
         speakSolo(b.say.audioUrl, b.say.text || '', () => { phase = 'track'; startQueue(b); });
       } else startQueue(b);
