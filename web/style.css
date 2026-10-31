@@ -114,6 +114,8 @@ main { flex: 1; width: 100%; max-width: 600px; margin: 0 auto; padding: 18px 14p
   flex: none;
 }
 .speaking i { width: 7px; height: 7px; border-radius: 50%; background: var(--green); animation: pulse 1.4s infinite; }
+.speaking.think { color: var(--accent); }
+.speaking.think i { background: var(--accent); animation: pulse 0.9s infinite; }
 .badge {
   display: inline-block;
   font-size: 9px; letter-spacing: 0.18em;

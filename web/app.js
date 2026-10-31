@@ -468,10 +468,11 @@
 
   function renderBroadcast(b, { restart = false } = {}) {
     const sameId = current?.id === b.id;
-    // 闲聊轮：大脑只回话没配歌（play=[]）。不覆写播放现场——队列/曲目/进度原样保留，
-    // 正在播就压音乐插话，暂停中就挂起（恢复时补说），闲置就独白。
+    $('thinkingTag').hidden = true;   // 播报到达（正式或占位）＝思考结束
+    // 闲聊/占位轮：只回话没配歌（play=[]；含思考期的占位播报）。不覆写播放现场——
+    // 队列/曲目/进度原样保留，正在播就压音乐插话，闲置就独白；暂停中占位直接丢弃。
     const hasLiveMusic = !!current?.queue?.length || (audio.src && !audio.src.startsWith('data:'));
-    if (!sameId && !b.queue?.length && !b.fallbackAudio && hasLiveMusic) {
+    if (!sameId && !b.queue?.length && !b.fallbackAudio && (b.placeholder || hasLiveMusic)) {
       if (!userPaused) $('state').textContent = 'SPEAKING';
       if (b.program?.name) $('program').textContent = b.program.name;
       $('say').textContent = b.say?.text ? `“${b.say.text}”` : '';
@@ -797,8 +798,8 @@
     addChat('user', text);
     $('btnSend').disabled = true;
     if (!userPaused) $('state').textContent = 'THINKING';
+    $('thinkingTag').hidden = false;          // 节目名旁的小徽标：思考中（不占歌曲名/节目名）
     $('say').textContent = '（DJ 思考中…）';
-    $('program').textContent = '选曲中…';
     try {
       const r = await fetch('/api/chat', {
         method: 'POST', headers: { 'Content-Type': 'application/json' },
@@ -813,7 +814,7 @@
       } else {
         addChat('system', `发送失败（${r.status}）`);
       }
-    } catch { addChat('system', '网络错误'); }
+    } catch { addChat('system', '网络错误'); $('thinkingTag').hidden = true; $('say').hidden = true; }
     $('btnSend').disabled = false;
   }
   $('btnSend').addEventListener('click', () => { const v = $('chatInput').value.trim(); if (v) { $('chatInput').value = ''; send(v); } });
